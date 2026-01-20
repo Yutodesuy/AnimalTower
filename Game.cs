@@ -30,6 +30,7 @@ public sealed class Game : IDisposable
     private float _aimTimer; // Timer for forced drop
     private readonly List<Animal> _landedAnimals = new();
     private readonly Floor _floor; // We need a floor instance
+    private readonly Random _random = new();
 
     public Game(int width, int height)
     {
@@ -74,10 +75,31 @@ public sealed class Game : IDisposable
 
     private void SpawnAnimal()
     {
-        // MVP: Simple 40x40 box
         float startX = _width / 2f;
         float startY = 60f;
-        _currentAnimal = new Animal(new PointF(startX, startY), new SizeF(40, 40));
+
+        int shapeType = _random.Next(4); // 0 to 3
+        float size = 45f;
+
+        switch (shapeType)
+        {
+            case 0:
+                _currentAnimal = Animal.CreateBox(new PointF(startX, startY), size);
+                break;
+            case 1:
+                _currentAnimal = Animal.CreateTriangle(new PointF(startX, startY), size);
+                break;
+            case 2:
+                _currentAnimal = Animal.CreatePentagon(new PointF(startX, startY), size);
+                break;
+            case 3:
+                _currentAnimal = Animal.CreateTrapezoid(new PointF(startX, startY), size);
+                break;
+            default:
+                _currentAnimal = Animal.CreateBox(new PointF(startX, startY), size);
+                break;
+        }
+
         _currentState = GameState.Aiming;
         _aimTimer = 5.0f; // Reset timer
     }
@@ -187,43 +209,26 @@ public sealed class Game : IDisposable
             }
 
             // State Transition: If speed is very low and hitting something, land it.
-            // Simplified "Landed" logic: if it hit something and is moving slowly.
             if (collisionOccurred)
             {
                 float vSq = _currentAnimal.Velocity.X * _currentAnimal.Velocity.X + _currentAnimal.Velocity.Y * _currentAnimal.Velocity.Y;
                 float angSq = _currentAnimal.AngularVelocity * _currentAnimal.AngularVelocity;
 
-                if (vSq < 50 && angSq < 10)
+                // Thresholds: velocity squared < 100 (10 px/s) and angular velocity squared < 10 (~3 deg/s)
+                // Relaxed slightly to allow easier stacking
+                if (vSq < 150 && angSq < 50)
                 {
-                   // _currentState = GameState.Landed;
-                   // Logic to freeze it? For now, we keep simulating physics until it truly stops or user spawns new?
-                   // The original game spawned a new one immediately on hit.
-                   // Let's implement a delay or check if it's stable.
-                   // For MVP rigid body: just Land it if it hits the floor or stack and is moving down.
+                    _currentState = GameState.Landed;
+                    _landedAnimals.Add(_currentAnimal);
+                    _currentAnimal = null;
+                    SpawnAnimal();
                 }
             }
 
             // If it fell off screen
-            if (_currentAnimal.Position.Y > _height + 100)
+            if (_currentAnimal != null && _currentAnimal.Position.Y > _height + 100)
             {
                 _currentState = GameState.GameOver;
-            }
-
-            // Hack for "Landed": If it stays roughly in place for a bit, or if we want to allow stacking.
-            // The original code landed immediately on AABB intersection.
-            // With rigid body, we want it to settle.
-            // BUT, the prompt implies "stacking".
-            // Let's settle for: If velocity is low after collision, freeze it.
-            if (collisionOccurred)
-            {
-                 float vSq = _currentAnimal.Velocity.X * _currentAnimal.Velocity.X + _currentAnimal.Velocity.Y * _currentAnimal.Velocity.Y;
-                 if (vSq < 100) // Threshold
-                 {
-                     _currentState = GameState.Landed;
-                     _landedAnimals.Add(_currentAnimal);
-                     _currentAnimal = null;
-                     SpawnAnimal();
-                 }
             }
         }
     }
@@ -234,8 +239,8 @@ public sealed class Game : IDisposable
     // Returns true if collision resolved
     private bool ResolveCollision(Animal a, PhysicsBody b)
     {
-        PointF[] shapeA = a.GetCorners();
-        PointF[] shapeB = b.GetCorners();
+        PointF[] shapeA = a.GetTransformedVertices();
+        PointF[] shapeB = b.GetTransformedVertices();
 
         PointF normal = PointF.Empty;
         float depth = float.MaxValue;
@@ -280,15 +285,15 @@ public sealed class Game : IDisposable
 
     private bool CheckAndResolveFloorCollision(Animal a)
     {
-        // Simple Floor check: Look for corners below floor Y
-        PointF[] corners = a.GetCorners();
+        // Floor check: Look for any vertex below floor Y
+        PointF[] vertices = a.GetTransformedVertices();
         bool hit = false;
 
         // Find deepest point
         float maxY = float.MinValue;
         PointF deepPoint = PointF.Empty;
 
-        foreach (var p in corners)
+        foreach (var p in vertices)
         {
             // Check lateral bounds
             float floorStart = (_width - _floor.Width) / 2;
@@ -325,15 +330,7 @@ public sealed class Game : IDisposable
 
     private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal)
     {
-        // Contact point estimation (simplified: use center + radius approx or just mid point)
-        // For accurate physics, we need the exact contact point.
-        // Approximating contact point as the midpoint of the overlap or just using A's closest corner.
-        // Let's use A's position + radius in direction of -normal as rough contact.
-
-        // BETTER: Use relative velocity at contact.
-        // Let's assume contact point 'r' relative to Center of Mass.
-        // Simplifying for MVP: Treat as linear collision for impulse, but apply some torque based on offset.
-
+        // Simple impulse resolution
         // Velocity Relative
         PointF rv = new PointF(a.Velocity.X - b.Velocity.X, a.Velocity.Y - b.Velocity.Y);
 
@@ -366,33 +363,21 @@ public sealed class Game : IDisposable
         a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X / a.Mass, a.Velocity.Y + frictionImpulse.Y / a.Mass);
         b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X / b.Mass, b.Velocity.Y - frictionImpulse.Y / b.Mass);
 
-        // Angular Impulse (Simplified)
-        // Torque = r x F.
-        // We need 'r'. approximating r as (Contact - Center).
-        // Since we didn't calculate exact contact point in SAT, we can try to guess or skip precise torque for MVP.
-        // HACK: Add random small rotation or based on X offset?
-        // Let's try to do it right. Find vector from center to impact.
-        // Impact roughly at a.Pos - normal * size.
-        // rA = contact - a.Pos
-        // rB = contact - b.Pos
-        // This requires the contact point.
-
-        // Heuristic for Rotation:
-        // If normal is (0, -1) (Vertical hit), check X offset.
-        // r x n gives torque direction.
-        // Let's assume contact is on the surface.
-        // This is getting complex for a single function without a ContactPoint solver.
-
-        // Fallback: Induce rotation based on velocity difference at edges?
-        // Or just apply a simple "If not centered, rotate" logic.
-
-        // Let's implement a fake torque based on horizontal offset if hitting top/bottom.
-        if (Math.Abs(normal.Y) > 0.8f) // Vertical hit
+        // Induce rotation based on offset (Simple Approximation)
+        // If normal is Vertical, check X offset relative to center diff
+        // This simulates torque without complex contact point manifold generation
+        float dist = (float)Math.Sqrt(Math.Pow(a.Position.X - b.Position.X, 2) + Math.Pow(a.Position.Y - b.Position.Y, 2));
+        if (dist > 1.0f)
         {
-            float xOffset = a.Position.X - b.Position.X; // Relative X
-            float torque = -xOffset * j * 0.1f; // Fake lever arm
-            a.AngularVelocity += torque / a.MomentOfInertia;
-            b.AngularVelocity -= torque / b.MomentOfInertia;
+            // Vector from B to A
+            PointF ba = new PointF(a.Position.X - b.Position.X, a.Position.Y - b.Position.Y);
+            // Torque depends on where the impact is relative to COM
+            // Cross product of BA and Impulse gives direction
+            float torqueVal = ba.X * impulse.Y - ba.Y * impulse.X;
+
+            // Dampen it - this is an approximation
+            a.AngularVelocity += (torqueVal * 0.1f) / a.MomentOfInertia;
+            b.AngularVelocity -= (torqueVal * 0.1f) / b.MomentOfInertia;
         }
     }
 
@@ -404,9 +389,7 @@ public sealed class Game : IDisposable
         // Relative velocity at contact point: V_p = V_cm + omega x r
         // 2D Cross product of scalar omega and vector r is (-omega * r.y, omega * r.x)
         PointF vRel = new PointF(
-            a.Velocity.X + (-a.AngularVelocity * 0.01745f * r.Y), // Deg to Rad approx needed? AngularVelocity is usually rad/s or deg/s?
-            // In PhysicsBody I said Rotation is deg. Let's assume AngVel is deg/s.
-            // Physics formulas need radians.
+            a.Velocity.X + (-a.AngularVelocity * 0.01745f * r.Y),
             a.Velocity.Y + (a.AngularVelocity * 0.01745f * r.X)
         );
 
@@ -419,10 +402,6 @@ public sealed class Game : IDisposable
         float rCrossN = r.X * normal.Y - r.Y * normal.X; // 2D Cross product
         float invMass = 1.0f / a.Mass;
         float invI = 1.0f / a.MomentOfInertia;
-
-        // Convert I to handle radians? No, I is Mass*Dist^2.
-        // The cross product term needs to be consistent.
-        // AngVel in Rad/s.
 
         float effectiveMass = invMass + (rCrossN * rCrossN) * invI;
 
@@ -539,38 +518,42 @@ public sealed class Game : IDisposable
         g.DrawLine(floorPen, floorStart, _floor.Y, floorStart + _floor.Width, _floor.Y);
 
         // Helper to draw animal
-        void DrawAnimal(Animal animal, Brush brush)
+        void DrawAnimal(Animal animal)
         {
             // Save state
             var state = g.Save();
 
-            // Translate to center, rotate, then translate back
-            g.TranslateTransform(animal.Position.X, animal.Position.Y);
-            g.RotateTransform(animal.Rotation);
+            // We do NOT use TranslateTransform/RotateTransform because we have pre-transformed vertices for SAT?
+            // Actually, we usually draw based on local shape + transform.
+            // But PhysicsBody now has LocalVertices.
+            // Let's use the standard Transform way to draw so we don't have to manually transform points for drawing every frame.
 
-            // Draw relative to center (0,0)
-            float hw = animal.Size.Width / 2;
-            float hh = animal.Size.Height / 2;
+            // Wait, GetTransformedVertices is used for Physics.
+            // For drawing, we can either use GetTransformedVertices and DrawPolygon, OR use transform matrix.
+            // Using GetTransformedVertices is safer because it matches the physics 1:1.
 
-            g.FillRectangle(brush, -hw, -hh, animal.Size.Width, animal.Size.Height);
-            g.DrawRectangle(Pens.Black, -hw, -hh, animal.Size.Width, animal.Size.Height);
+            PointF[] vertices = animal.GetTransformedVertices();
+
+            using (var brush = new SolidBrush(animal.Color))
+            {
+                g.FillPolygon(brush, vertices);
+            }
+            g.DrawPolygon(Pens.Black, vertices);
 
             // Restore
             g.Restore(state);
         }
 
         // Draw Landed Animals
-        using var landedBrush = new SolidBrush(Color.FromArgb(100, 200, 100));
         foreach (var animal in _landedAnimals)
         {
-            DrawAnimal(animal, landedBrush);
+            DrawAnimal(animal);
         }
 
         // Draw Current Animal
         if (_currentAnimal != null)
         {
-            using var currentBrush = new SolidBrush(Color.FromArgb(200, 100, 100));
-            DrawAnimal(_currentAnimal, currentBrush);
+            DrawAnimal(_currentAnimal);
         }
 
         // Draw Timer if Aiming
@@ -601,17 +584,14 @@ public sealed class Game : IDisposable
 
     public void HandleMouseMove(Point position)
     {
-        // Placeholder for support board control.
     }
 
     public void HandleMouseDown(MouseButtons button, Point position)
     {
-        // Placeholder for future input.
     }
 
     public void HandleMouseUp(MouseButtons button, Point position)
     {
-        // Placeholder for future input.
     }
 
     public void Dispose()
