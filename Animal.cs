@@ -1,15 +1,10 @@
+using System.Drawing;
+
 namespace AnimalTower;
 
-public sealed class Animal
+public sealed class Animal : PhysicsBody
 {
-    public PointF Position { get; set; }
-    public SizeF Size { get; set; }
-    public float Rotation { get; set; }
-
-    public Animal(PointF position, SizeF size)
+    public Animal(PointF position, SizeF size) : base(position, size)
     {
-        Position = position;
-        Size = size;
-        Rotation = 0f;
     }
 }
