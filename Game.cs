@@ -10,13 +10,22 @@ public sealed class Game : IDisposable
 
     public enum GameState
     {
+        Title,
         Aiming,
         Falling,
         Landed, // Transitional state
         GameOver
     }
 
+    public enum Difficulty
+    {
+        Easy,
+        Normal,
+        Hard
+    }
+
     private GameState _currentState;
+    private Difficulty _difficulty = Difficulty.Normal;
     private Animal? _currentAnimal;
     private readonly List<Animal> _landedAnimals = new();
     private readonly Floor _floor; // We need a floor instance
@@ -30,14 +39,33 @@ public sealed class Game : IDisposable
         // Initialize Floor (fixed position for now)
         _floor = new Floor(_height - 50, _width);
 
-        StartNewGame();
+        _currentState = GameState.Title;
     }
 
     private void StartNewGame()
     {
         _landedAnimals.Clear();
         _currentState = GameState.Aiming;
+        UpdateFloorDimensions();
         SpawnAnimal();
+    }
+
+    private void UpdateFloorDimensions()
+    {
+        float floorWidth = _width; // Default
+        switch (_difficulty)
+        {
+            case Difficulty.Easy:
+                floorWidth = _width * 0.75f;
+                break;
+            case Difficulty.Normal:
+                floorWidth = _width * 0.5f;
+                break;
+            case Difficulty.Hard:
+                floorWidth = _width * 0.25f;
+                break;
+        }
+        _floor.Width = floorWidth;
     }
 
     private void SpawnAnimal()
@@ -51,7 +79,28 @@ public sealed class Game : IDisposable
 
     public void HandleInput(Keys key)
     {
-        if (_currentState == GameState.Aiming && _currentAnimal != null)
+        if (_currentState == GameState.Title)
+        {
+            switch (key)
+            {
+                case Keys.D1:
+                case Keys.NumPad1:
+                    _difficulty = Difficulty.Easy;
+                    StartNewGame();
+                    break;
+                case Keys.D2:
+                case Keys.NumPad2:
+                    _difficulty = Difficulty.Normal;
+                    StartNewGame();
+                    break;
+                case Keys.D3:
+                case Keys.NumPad3:
+                    _difficulty = Difficulty.Hard;
+                    StartNewGame();
+                    break;
+            }
+        }
+        else if (_currentState == GameState.Aiming && _currentAnimal != null)
         {
             float speed = 10f; // pixels per keypress (rough)
 
@@ -67,6 +116,13 @@ public sealed class Game : IDisposable
                 case Keys.Enter:
                     _currentState = GameState.Falling;
                     break;
+            }
+        }
+        else if (_currentState == GameState.GameOver)
+        {
+            if (key == Keys.R || key == Keys.Space || key == Keys.Enter)
+            {
+                _currentState = GameState.Title;
             }
         }
     }
@@ -85,10 +141,62 @@ public sealed class Game : IDisposable
                 _currentAnimal.Position.Y + _currentAnimal.Velocity.Y * dt
             );
 
+            // 2.5 Collision with Landed Animals
+            foreach (var landed in _landedAnimals)
+            {
+                // Simple AABB Collision
+                if (_currentAnimal.Bounds.IntersectsWith(landed.Bounds))
+                {
+                    RectangleF intersection = RectangleF.Intersect(_currentAnimal.Bounds, landed.Bounds);
+
+                    // Determine dominant axis for resolution
+                    if (intersection.Width > intersection.Height)
+                    {
+                        // Vertical Collision
+                        if (_currentAnimal.Position.Y < landed.Position.Y) // Hits from top
+                        {
+                            // Push up
+                            _currentAnimal.Position = new PointF(_currentAnimal.Position.X, _currentAnimal.Position.Y - intersection.Height);
+                            _currentAnimal.Velocity = new PointF(_currentAnimal.Velocity.X, 0);
+
+                            // Land
+                            _currentState = GameState.Landed;
+                            _landedAnimals.Add(_currentAnimal);
+                            _currentAnimal = null;
+                            SpawnAnimal();
+                            return;
+                        }
+                        else // Hits from bottom
+                        {
+                            // Push down
+                            _currentAnimal.Position = new PointF(_currentAnimal.Position.X, _currentAnimal.Position.Y + intersection.Height);
+                            _currentAnimal.Velocity = new PointF(_currentAnimal.Velocity.X, 0);
+                        }
+                    }
+                    else
+                    {
+                        // Horizontal Collision
+                        float push = intersection.Width;
+                        if (_currentAnimal.Position.X < landed.Position.X)
+                            _currentAnimal.Position = new PointF(_currentAnimal.Position.X - push, _currentAnimal.Position.Y);
+                        else
+                            _currentAnimal.Position = new PointF(_currentAnimal.Position.X + push, _currentAnimal.Position.Y);
+                    }
+                }
+            }
+
             // 3. Collision with Floor
             float animalBottom = _currentAnimal.Position.Y + _currentAnimal.Size.Height / 2;
+            float animalLeft = _currentAnimal.Position.X - _currentAnimal.Size.Width / 2;
+            float animalRight = _currentAnimal.Position.X + _currentAnimal.Size.Width / 2;
 
-            if (animalBottom >= _floor.Y)
+            float floorStart = (_width - _floor.Width) / 2;
+            float floorEnd = floorStart + _floor.Width;
+
+            // Check if within floor X bounds
+            bool overFloor = animalRight > floorStart && animalLeft < floorEnd;
+
+            if (overFloor && animalBottom >= _floor.Y)
             {
                 // Simple collision response: Stop and Snap
                 _currentAnimal.Position = new PointF(_currentAnimal.Position.X, _floor.Y - _currentAnimal.Size.Height / 2);
@@ -104,7 +212,7 @@ public sealed class Game : IDisposable
             }
 
             // 4. Game Over Check
-            if (_currentAnimal != null && _currentAnimal.Position.Y > _height + 100)
+            if (_currentAnimal != null && _currentAnimal.Position.Y > _height + 50)
             {
                 _currentState = GameState.GameOver;
             }
@@ -116,9 +224,26 @@ public sealed class Game : IDisposable
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.Clear(Color.FromArgb(20, 24, 30));
 
+        if (_currentState == GameState.Title)
+        {
+            using var titleBrush = new SolidBrush(Color.White);
+            using var titleFont = new Font("Segoe UI", 32, FontStyle.Bold);
+            using var subFont = new Font("Segoe UI", 16);
+
+            string title = "ANIMAL TOWER";
+            SizeF titleSize = g.MeasureString(title, titleFont);
+            g.DrawString(title, titleFont, titleBrush, (_width - titleSize.Width) / 2, _height / 3);
+
+            string subtitle = "Select Difficulty:\n1. Easy\n2. Normal\n3. Hard";
+            SizeF subSize = g.MeasureString(subtitle, subFont);
+            g.DrawString(subtitle, subFont, titleBrush, (_width - subSize.Width) / 2, _height / 2);
+            return;
+        }
+
         // Draw Floor
         using var floorPen = new Pen(Color.FromArgb(180, 200, 210), 3f);
-        g.DrawLine(floorPen, 0, _floor.Y, _width, _floor.Y);
+        float floorStart = (_width - _floor.Width) / 2;
+        g.DrawLine(floorPen, floorStart, _floor.Y, floorStart + _floor.Width, _floor.Y);
 
         // Helper to draw animal
         void DrawAnimal(Animal animal, Brush brush)
@@ -145,10 +270,10 @@ public sealed class Game : IDisposable
         }
 
         // UI / Debug
-        string label = $"State: {_currentState} | Animals: {_landedAnimals.Count}";
+        string label = $"State: {_currentState} | Animals: {_landedAnimals.Count} | Diff: {_difficulty}";
         if (_currentState == GameState.GameOver)
         {
-            label = "GAME OVER";
+            label = "GAME OVER - Press R or Space to Restart";
         }
 
         g.DrawString(label, _debugFont, Brushes.Gainsboro, 10, 10);
@@ -158,6 +283,8 @@ public sealed class Game : IDisposable
     {
         _width = Math.Max(1, width);
         _height = Math.Max(1, height);
+        _floor.Y = _height - 50;
+        UpdateFloorDimensions();
     }
 
     public void HandleMouseMove(Point position)
