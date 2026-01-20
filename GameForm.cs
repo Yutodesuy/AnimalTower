@@ -4,7 +4,7 @@ namespace AnimalTower;
 
 public sealed class GameForm : Form
 {
-    private readonly Timer _timer;
+    private readonly System.Windows.Forms.Timer _timer;
     private readonly Stopwatch _stopwatch;
     private readonly Game _game;
 
@@ -18,7 +18,7 @@ public sealed class GameForm : Form
         _game = new Game(ClientSize.Width, ClientSize.Height);
         _stopwatch = Stopwatch.StartNew();
 
-        _timer = new Timer
+        _timer = new System.Windows.Forms.Timer
         {
             Interval = 16
         };
