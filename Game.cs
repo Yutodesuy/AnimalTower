@@ -25,7 +25,7 @@ public sealed class Game : IDisposable
     }
 
     private GameState _currentState;
-    private Difficulty _difficulty = Difficulty.Normal;
+    private Difficulty _difficulty = Difficulty.Normal; // Explicitly set default
     private Animal? _currentAnimal;
     private readonly List<Animal> _landedAnimals = new();
     private readonly Floor _floor; // We need a floor instance
@@ -81,22 +81,29 @@ public sealed class Game : IDisposable
     {
         if (_currentState == GameState.Title)
         {
+            int difficultyCount = Enum.GetValues(typeof(Difficulty)).Length;
             switch (key)
             {
+                case Keys.Up:
+                    _difficulty = (Difficulty)(((int)_difficulty + difficultyCount - 1) % difficultyCount);
+                    break;
+                case Keys.Down:
+                    _difficulty = (Difficulty)(((int)_difficulty + 1) % difficultyCount);
+                    break;
+                case Keys.Enter:
+                    StartNewGame();
+                    break;
                 case Keys.D1:
                 case Keys.NumPad1:
                     _difficulty = Difficulty.Easy;
-                    StartNewGame();
                     break;
                 case Keys.D2:
                 case Keys.NumPad2:
                     _difficulty = Difficulty.Normal;
-                    StartNewGame();
                     break;
                 case Keys.D3:
                 case Keys.NumPad3:
                     _difficulty = Difficulty.Hard;
-                    StartNewGame();
                     break;
             }
         }
@@ -234,9 +241,17 @@ public sealed class Game : IDisposable
             SizeF titleSize = g.MeasureString(title, titleFont);
             g.DrawString(title, titleFont, titleBrush, (_width - titleSize.Width) / 2, _height / 3);
 
-            string subtitle = "Select Difficulty:\n1. Easy\n2. Normal\n3. Hard";
-            SizeF subSize = g.MeasureString(subtitle, subFont);
-            g.DrawString(subtitle, subFont, titleBrush, (_width - subSize.Width) / 2, _height / 2);
+            float startY = _height / 2;
+            foreach (Difficulty diff in Enum.GetValues(typeof(Difficulty)))
+            {
+                string text = diff.ToString();
+                Brush brush = (diff == _difficulty) ? Brushes.Yellow : Brushes.White;
+                if (diff == _difficulty) text = "> " + text + " <";
+
+                SizeF textSize = g.MeasureString(text, subFont);
+                g.DrawString(text, subFont, brush, (_width - textSize.Width) / 2, startY);
+                startY += textSize.Height + 10;
+            }
             return;
         }
 
