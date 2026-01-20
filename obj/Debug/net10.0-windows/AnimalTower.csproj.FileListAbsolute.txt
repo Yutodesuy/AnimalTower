@@ -1,0 +1,14 @@
+C:\Users\miyuk\AnimalTower\bin\Debug\net10.0-windows\AnimalTower.exe
+C:\Users\miyuk\AnimalTower\bin\Debug\net10.0-windows\AnimalTower.deps.json
+C:\Users\miyuk\AnimalTower\bin\Debug\net10.0-windows\AnimalTower.runtimeconfig.json
+C:\Users\miyuk\AnimalTower\bin\Debug\net10.0-windows\AnimalTower.dll
+C:\Users\miyuk\AnimalTower\bin\Debug\net10.0-windows\AnimalTower.pdb
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.AssemblyInfoInputs.cache
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.AssemblyInfo.cs
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.csproj.CoreCompileInputs.cache
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.dll
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\refint\AnimalTower.dll
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.pdb
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\AnimalTower.genruntimeconfig.cache
+C:\Users\miyuk\AnimalTower\obj\Debug\net10.0-windows\ref\AnimalTower.dll
