@@ -191,6 +191,12 @@ public sealed class Game : IDisposable
                 activeBodies.Add(_currentAnimal);
             }
 
+            // Reset floor touch flags
+            foreach (var body in activeBodies)
+            {
+                body.IsTouchingFloor = false;
+            }
+
             float gravity = 500f; // pixels/s^2
 
             // 1. Apply Gravity & Predict Position (Integration)
@@ -272,6 +278,23 @@ public sealed class Game : IDisposable
                         // Usually in tower games, if any piece falls, it's Game Over.
                         _currentState = GameState.GameOver;
                     }
+                }
+            }
+
+            // Update Floor Contact Timers & Elasticity
+            foreach (var body in activeBodies)
+            {
+                if (body.IsTouchingFloor)
+                {
+                    body.FloorContactTime += dt;
+                    if (body.FloorContactTime >= 2.0f)
+                    {
+                        body.Restitution = 0.0f;
+                    }
+                }
+                else
+                {
+                    body.FloorContactTime = 0.0f;
                 }
             }
         }
@@ -368,6 +391,8 @@ public sealed class Game : IDisposable
 
         if (hit)
         {
+            a.IsTouchingFloor = true;
+
             PointF normal = new PointF(0, -1);
             float depth = maxY - _floor.Y;
 
