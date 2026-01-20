@@ -8,8 +8,8 @@ public class PhysicsBody
     public PointF Velocity { get; set; }
     public PointF Acceleration { get; set; }
 
-    // Internal vertices relative to (0,0) center
-    protected PointF[] LocalVertices { get; set; }
+    // Internal shapes relative to (0,0) center. Each shape is a convex polygon.
+    protected List<PointF[]> LocalShapes { get; set; }
 
     public float Rotation { get; set; } // In degrees
     public float AngularVelocity { get; set; }
@@ -23,8 +23,9 @@ public class PhysicsBody
     {
         get
         {
-            // Approximate as a box
+            // Approximate as a box covering all shapes
             var size = GetBoundingSize();
+            // I = m * (w^2 + h^2) / 12
             return Mass * (size.Width * size.Width + size.Height * size.Height) / 12f;
         }
     }
@@ -48,17 +49,19 @@ public class PhysicsBody
         Position = position;
         Velocity = PointF.Empty;
         Acceleration = PointF.Empty;
+        LocalShapes = new List<PointF[]>();
 
         // Default to box shape for backward compatibility
         float hw = size.Width / 2f;
         float hh = size.Height / 2f;
-        LocalVertices = new PointF[]
+        var box = new PointF[]
         {
             new PointF(-hw, -hh),
             new PointF(hw, -hh),
             new PointF(hw, hh),
             new PointF(-hw, hh)
         };
+        LocalShapes.Add(box);
     }
 
     public PhysicsBody(PointF position, PointF[] localVertices)
@@ -66,43 +69,63 @@ public class PhysicsBody
         Position = position;
         Velocity = PointF.Empty;
         Acceleration = PointF.Empty;
-        LocalVertices = localVertices;
+        LocalShapes = new List<PointF[]> { localVertices };
+    }
+
+    public PhysicsBody(PointF position, List<PointF[]> localShapes)
+    {
+        Position = position;
+        Velocity = PointF.Empty;
+        Acceleration = PointF.Empty;
+        LocalShapes = localShapes;
     }
 
     private SizeF GetBoundingSize()
     {
-        if (LocalVertices == null || LocalVertices.Length == 0) return SizeF.Empty;
+        if (LocalShapes == null || LocalShapes.Count == 0) return SizeF.Empty;
+
         float minX = float.MaxValue, maxX = float.MinValue;
         float minY = float.MaxValue, maxY = float.MinValue;
 
-        foreach (var v in LocalVertices)
+        foreach (var shape in LocalShapes)
         {
-            if (v.X < minX) minX = v.X;
-            if (v.X > maxX) maxX = v.X;
-            if (v.Y < minY) minY = v.Y;
-            if (v.Y > maxY) maxY = v.Y;
+            foreach (var v in shape)
+            {
+                if (v.X < minX) minX = v.X;
+                if (v.X > maxX) maxX = v.X;
+                if (v.Y < minY) minY = v.Y;
+                if (v.Y > maxY) maxY = v.Y;
+            }
         }
+
+        if (minX > maxX) return SizeF.Empty; // Should not happen if shapes exist
+
         return new SizeF(maxX - minX, maxY - minY);
     }
 
-    public PointF[] GetTransformedVertices()
+    public List<PointF[]> GetTransformedVertices()
     {
-        if (LocalVertices == null) return Array.Empty<PointF>();
+        if (LocalShapes == null) return new List<PointF[]>();
 
-        PointF[] transformed = new PointF[LocalVertices.Length];
+        var result = new List<PointF[]>();
 
         // Rotation matrix
         double rad = Rotation * Math.PI / 180.0;
         float cos = (float)Math.Cos(rad);
         float sin = (float)Math.Sin(rad);
 
-        for (int i = 0; i < LocalVertices.Length; i++)
+        foreach (var shape in LocalShapes)
         {
-            float rx = LocalVertices[i].X * cos - LocalVertices[i].Y * sin;
-            float ry = LocalVertices[i].X * sin + LocalVertices[i].Y * cos;
-            transformed[i] = new PointF(Position.X + rx, Position.Y + ry);
+            PointF[] transformed = new PointF[shape.Length];
+            for (int i = 0; i < shape.Length; i++)
+            {
+                float rx = shape[i].X * cos - shape[i].Y * sin;
+                float ry = shape[i].X * sin + shape[i].Y * cos;
+                transformed[i] = new PointF(Position.X + rx, Position.Y + ry);
+            }
+            result.Add(transformed);
         }
 
-        return transformed;
+        return result;
     }
 }

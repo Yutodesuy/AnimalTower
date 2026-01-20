@@ -78,26 +78,23 @@ public sealed class Game : IDisposable
         float startX = _width / 2f;
         float startY = 60f;
 
-        int shapeType = _random.Next(4); // 0 to 3
-        float size = 45f;
+        // Randomly select one of the 10 animals
+        int animalType = _random.Next(10);
+        PointF pos = new PointF(startX, startY);
 
-        switch (shapeType)
+        switch (animalType)
         {
-            case 0:
-                _currentAnimal = Animal.CreateBox(new PointF(startX, startY), size);
-                break;
-            case 1:
-                _currentAnimal = Animal.CreateTriangle(new PointF(startX, startY), size);
-                break;
-            case 2:
-                _currentAnimal = Animal.CreatePentagon(new PointF(startX, startY), size);
-                break;
-            case 3:
-                _currentAnimal = Animal.CreateTrapezoid(new PointF(startX, startY), size);
-                break;
-            default:
-                _currentAnimal = Animal.CreateBox(new PointF(startX, startY), size);
-                break;
+            case 0: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
+            case 1: _currentAnimal = Animal.Factory.CreateGiraffe(pos); break;
+            case 2: _currentAnimal = Animal.Factory.CreateHippo(pos); break;
+            case 3: _currentAnimal = Animal.Factory.CreateRhino(pos); break;
+            case 4: _currentAnimal = Animal.Factory.CreateLion(pos); break;
+            case 5: _currentAnimal = Animal.Factory.CreatePanda(pos); break;
+            case 6: _currentAnimal = Animal.Factory.CreateRabbit(pos); break;
+            case 7: _currentAnimal = Animal.Factory.CreateCat(pos); break;
+            case 8: _currentAnimal = Animal.Factory.CreateChick(pos); break;
+            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break;
+            default: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
         }
 
         _currentState = GameState.Aiming;
@@ -173,12 +170,7 @@ public sealed class Game : IDisposable
             }
         }
 
-        // We run physics if we are falling or if there are landed animals (since they are dynamic)
-        // Actually, we should always run physics for landed animals if we want them to settle/fall.
-        // But the main loop logic depends on state.
-
         bool physicsActive = (_currentState == GameState.Falling || _currentState == GameState.Landed || _currentState == GameState.Aiming);
-        // Even in Aiming, landed animals should settle if they were moving.
 
         if (physicsActive)
         {
@@ -216,7 +208,6 @@ public sealed class Game : IDisposable
             }
 
             // 2. Iterative Collision Solver
-            // Running multiple iterations helps stabilize the stack and propagate forces
             int iterations = 4;
             bool currentHitSomething = false;
 
@@ -274,8 +265,6 @@ public sealed class Game : IDisposable
                     }
                     else
                     {
-                        // Landed animal fell off? Remove it? Or Game Over?
-                        // Usually in tower games, if any piece falls, it's Game Over.
                         _currentState = GameState.GameOver;
                     }
                 }
@@ -306,13 +295,59 @@ public sealed class Game : IDisposable
     // Returns true if collision resolved
     private bool ResolveCollision(Animal a, PhysicsBody b, float dt)
     {
-        PointF[] shapeA = a.GetTransformedVertices();
-        PointF[] shapeB = b.GetTransformedVertices();
+        // Get all shapes for both bodies
+        var shapesA = a.GetTransformedVertices();
+        var shapesB = b.GetTransformedVertices();
 
-        PointF normal = PointF.Empty;
-        float depth = float.MaxValue;
+        PointF bestNormal = PointF.Empty;
+        float bestDepth = 0.0f;
+        PointF bestContactPoint = PointF.Empty; // Not fully utilized for multi-shape impulse yet, using center-based
+        bool collisionFound = false;
 
-        // Axes to test: Normals of all edges of both shapes
+        // Iterate through ALL shape pairs to find the deepest penetration
+        foreach (var shapeA in shapesA)
+        {
+            foreach (var shapeB in shapesB)
+            {
+                PointF normal;
+                float depth;
+                if (CheckCollisionSAT(shapeA, shapeB, a.Position, b.Position, out normal, out depth))
+                {
+                    if (depth > bestDepth)
+                    {
+                        bestDepth = depth;
+                        bestNormal = normal;
+                        collisionFound = true;
+                    }
+                }
+            }
+        }
+
+        if (!collisionFound) return false;
+
+        // Slop (Tolerance)
+        float slop = 0.2f;
+        float correctionDepth = Math.Max(0, bestDepth - slop);
+
+        if (correctionDepth > 0)
+        {
+            // Resolve Penetration
+            float percent = 0.5f;
+            a.Position = new PointF(a.Position.X + bestNormal.X * correctionDepth * percent, a.Position.Y + bestNormal.Y * correctionDepth * percent);
+            b.Position = new PointF(b.Position.X - bestNormal.X * correctionDepth * percent, b.Position.Y - bestNormal.Y * correctionDepth * percent);
+        }
+
+        // Compute Impulse
+        ApplyImpulse(a, b, bestNormal, dt);
+
+        return true;
+    }
+
+    private bool CheckCollisionSAT(PointF[] shapeA, PointF[] shapeB, PointF centerA, PointF centerB, out PointF normal, out float depth)
+    {
+        normal = PointF.Empty;
+        depth = float.MaxValue;
+
         List<PointF> axes = new List<PointF>();
         axes.AddRange(GetAxes(shapeA));
         axes.AddRange(GetAxes(shapeB));
@@ -322,7 +357,7 @@ public sealed class Game : IDisposable
             var pA = Project(shapeA, axis);
             var pB = Project(shapeB, axis);
 
-            if (!Overlap(pA, pB)) return false; // No collision
+            if (!Overlap(pA, pB)) return false; // No collision on this axis
 
             float axisDepth = Math.Min(pA.Max - pB.Min, pB.Max - pA.Min);
             if (axisDepth < depth)
@@ -333,58 +368,41 @@ public sealed class Game : IDisposable
         }
 
         // Ensure normal points from B to A
-        PointF centerA = a.Position;
-        PointF centerB = b.Position;
         PointF dir = new PointF(centerA.X - centerB.X, centerA.Y - centerB.Y);
         if (Dot(dir, normal) < 0)
         {
             normal = new PointF(-normal.X, -normal.Y);
         }
 
-        // Slop (Tolerance) to prevent micro-jitter
-        float slop = 0.2f;
-        float correctionDepth = Math.Max(0, depth - slop);
-
-        if (correctionDepth > 0)
-        {
-            // Resolve Penetration
-            // Weighted by inverse mass (assumed equal for now, both 1.0)
-            // But we treat both as dynamic.
-            float percent = 0.5f; // Split correction
-            a.Position = new PointF(a.Position.X + normal.X * correctionDepth * percent, a.Position.Y + normal.Y * correctionDepth * percent);
-            b.Position = new PointF(b.Position.X - normal.X * correctionDepth * percent, b.Position.Y - normal.Y * correctionDepth * percent);
-        }
-
-        // Compute Impulse
-        ApplyImpulse(a, b, normal, dt);
-
         return true;
     }
 
     private bool CheckAndResolveFloorCollision(Animal a, float dt)
     {
-        // Floor check: Look for any vertex below floor Y
-        PointF[] vertices = a.GetTransformedVertices();
+        // Floor check: Look for any vertex below floor Y in ANY shape
+        var shapes = a.GetTransformedVertices();
         bool hit = false;
-
-        // Find deepest point
-        float maxY = float.MinValue;
+        float maxDepth = 0f;
         PointF deepPoint = PointF.Empty;
 
-        foreach (var p in vertices)
+        foreach (var vertices in shapes)
         {
-            // Check lateral bounds
-            float floorStart = (_width - _floor.Width) / 2;
-            float floorEnd = floorStart + _floor.Width;
-            bool withinX = p.X >= floorStart && p.X <= floorEnd;
-
-            if (p.Y > _floor.Y && withinX)
+            foreach (var p in vertices)
             {
-                hit = true;
-                if (p.Y > maxY)
+                // Check lateral bounds
+                float floorStart = (_width - _floor.Width) / 2;
+                float floorEnd = floorStart + _floor.Width;
+                bool withinX = p.X >= floorStart && p.X <= floorEnd;
+
+                if (p.Y > _floor.Y && withinX)
                 {
-                    maxY = p.Y;
-                    deepPoint = p;
+                    hit = true;
+                    float currentDepth = p.Y - _floor.Y;
+                    if (currentDepth > maxDepth)
+                    {
+                        maxDepth = currentDepth;
+                        deepPoint = p;
+                    }
                 }
             }
         }
@@ -394,11 +412,10 @@ public sealed class Game : IDisposable
             a.IsTouchingFloor = true;
 
             PointF normal = new PointF(0, -1);
-            float depth = maxY - _floor.Y;
 
             // Slop
             float slop = 0.2f;
-            float correctionDepth = Math.Max(0, depth - slop);
+            float correctionDepth = Math.Max(0, maxDepth - slop);
 
             if (correctionDepth > 0)
             {
@@ -407,7 +424,6 @@ public sealed class Game : IDisposable
             }
 
             // Impulse
-            // Treat floor as infinite mass, stationary body
             ApplyImpulseStatic(a, deepPoint, normal, _floor.Friction, dt);
             return true;
         }
@@ -417,7 +433,6 @@ public sealed class Game : IDisposable
 
     private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal, float dt)
     {
-        // Simple impulse resolution
         // Velocity Relative
         PointF rv = new PointF(a.Velocity.X - b.Velocity.X, a.Velocity.Y - b.Velocity.Y);
 
@@ -427,8 +442,6 @@ public sealed class Game : IDisposable
 
         float e = Math.Min(a.Restitution, b.Restitution);
 
-        // Resting Contact: If velocity is very low (gravity threshold), zero out restitution
-        // Gravity is 500. One frame is dt. 500 * dt is velocity gained in one frame.
         if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
         {
             e = 0.0f;
@@ -448,28 +461,20 @@ public sealed class Game : IDisposable
         float jt = -Dot(rv, tangent);
         jt /= (1 / a.Mass + 1 / b.Mass);
 
-        // Coulomb's law: Clamp friction to mu * normalImpulse
         float mu = (a.Friction + b.Friction) * 0.5f;
         float maxJt = j * mu;
-        if (Math.Abs(jt) > maxJt) jt = Math.Sign(jt) * maxJt; // Dynamic friction
+        if (Math.Abs(jt) > maxJt) jt = Math.Sign(jt) * maxJt;
 
         PointF frictionImpulse = new PointF(tangent.X * jt, tangent.Y * jt);
         a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X / a.Mass, a.Velocity.Y + frictionImpulse.Y / a.Mass);
         b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X / b.Mass, b.Velocity.Y - frictionImpulse.Y / b.Mass);
 
-        // Induce rotation based on offset (Simple Approximation)
-        // If normal is Vertical, check X offset relative to center diff
-        // This simulates torque without complex contact point manifold generation
+        // Induce rotation
         float dist = (float)Math.Sqrt(Math.Pow(a.Position.X - b.Position.X, 2) + Math.Pow(a.Position.Y - b.Position.Y, 2));
         if (dist > 1.0f)
         {
-            // Vector from B to A
             PointF ba = new PointF(a.Position.X - b.Position.X, a.Position.Y - b.Position.Y);
-            // Torque depends on where the impact is relative to COM
-            // Cross product of BA and Impulse gives direction
             float torqueVal = ba.X * impulse.Y - ba.Y * impulse.X;
-
-            // Dampen it - this is an approximation
             a.AngularVelocity += (torqueVal * 0.1f) / a.MomentOfInertia;
             b.AngularVelocity -= (torqueVal * 0.1f) / b.MomentOfInertia;
         }
@@ -477,11 +482,8 @@ public sealed class Game : IDisposable
 
     private void ApplyImpulseStatic(Animal a, PointF contactPoint, PointF normal, float frictionCoeff, float dt)
     {
-        // r = vector from COM to contact point
         PointF r = new PointF(contactPoint.X - a.Position.X, contactPoint.Y - a.Position.Y);
 
-        // Relative velocity at contact point: V_p = V_cm + omega x r
-        // 2D Cross product of scalar omega and vector r is (-omega * r.y, omega * r.x)
         PointF vRel = new PointF(
             a.Velocity.X + (-a.AngularVelocity * 0.01745f * r.Y),
             a.Velocity.Y + (a.AngularVelocity * 0.01745f * r.X)
@@ -491,9 +493,7 @@ public sealed class Game : IDisposable
 
         if (velAlongNormal > 0) return;
 
-        // Impulse scalar
-        // J = -(1+e) * vRel.n / (1/m + (r x n)^2 / I)
-        float rCrossN = r.X * normal.Y - r.Y * normal.X; // 2D Cross product
+        float rCrossN = r.X * normal.Y - r.Y * normal.X;
         float invMass = 1.0f / a.Mass;
         float invI = 1.0f / a.MomentOfInertia;
 
@@ -501,7 +501,6 @@ public sealed class Game : IDisposable
 
         float e = a.Restitution;
 
-        // Resting Contact: If velocity is very low (gravity threshold), zero out restitution
         if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
         {
             e = 0.0f;
@@ -511,26 +510,21 @@ public sealed class Game : IDisposable
 
         PointF impulse = new PointF(normal.X * j, normal.Y * j);
 
-        // Apply Linear
         a.Velocity = new PointF(a.Velocity.X + impulse.X * invMass, a.Velocity.Y + impulse.Y * invMass);
 
-        // Apply Angular (Degrees)
-        // Torque = r x J
         float torque = r.X * impulse.Y - r.Y * impulse.X;
         float angAccel = torque * invI;
-        a.AngularVelocity += angAccel * 57.29f; // Rad to Deg
+        a.AngularVelocity += angAccel * 57.29f;
 
         // Friction
-        PointF tangent = new PointF(-normal.Y, normal.X); // Perpendicular
+        PointF tangent = new PointF(-normal.Y, normal.X);
         float vRelTangent = Dot(vRel, tangent);
 
-        // Tangent impulse
         float rCrossT = r.X * tangent.Y - r.Y * tangent.X;
         float effectiveMassT = invMass + (rCrossT * rCrossT) * invI;
 
         float jt = -vRelTangent / effectiveMassT;
 
-        // Clamp
         float maxJt = j * (a.Friction + frictionCoeff) * 0.5f;
         if (Math.Abs(jt) > maxJt) jt = Math.Sign(jt) * maxJt;
 
@@ -542,7 +536,6 @@ public sealed class Game : IDisposable
         a.AngularVelocity += (torqueF * invI) * 57.29f;
     }
 
-    // SAT Helpers
     private List<PointF> GetAxes(PointF[] corners)
     {
         var axes = new List<PointF>();
@@ -621,43 +614,36 @@ public sealed class Game : IDisposable
         // Helper to draw animal
         void DrawAnimal(Animal animal)
         {
-            // Save state
             var state = g.Save();
 
-            // We do NOT use TranslateTransform/RotateTransform because we have pre-transformed vertices for SAT?
-            // Actually, we usually draw based on local shape + transform.
-            // But PhysicsBody now has LocalVertices.
-            // Let's use the standard Transform way to draw so we don't have to manually transform points for drawing every frame.
-
-            // Wait, GetTransformedVertices is used for Physics.
-            // For drawing, we can either use GetTransformedVertices and DrawPolygon, OR use transform matrix.
-            // Using GetTransformedVertices is safer because it matches the physics 1:1.
-
-            PointF[] vertices = animal.GetTransformedVertices();
+            // Get List of shapes (List<PointF[]>)
+            var shapes = animal.GetTransformedVertices();
 
             using (var brush = new SolidBrush(animal.Color))
             {
-                g.FillPolygon(brush, vertices);
+                foreach (var vertices in shapes)
+                {
+                    g.FillPolygon(brush, vertices);
+                    g.DrawPolygon(Pens.Black, vertices);
+                }
             }
-            g.DrawPolygon(Pens.Black, vertices);
+            // Optional: Draw Eye or detail?
+            // Since we don't store "Eye Position" relative to shape, we skip for now.
+            // But we could add a simple "Eye" relative to the first shape's center or similar later.
 
-            // Restore
             g.Restore(state);
         }
 
-        // Draw Landed Animals
         foreach (var animal in _landedAnimals)
         {
             DrawAnimal(animal);
         }
 
-        // Draw Current Animal
         if (_currentAnimal != null)
         {
             DrawAnimal(_currentAnimal);
         }
 
-        // Draw Timer if Aiming
         if (_currentState == GameState.Aiming)
         {
             string timerText = $"{_aimTimer:0.0}";
@@ -665,7 +651,6 @@ public sealed class Game : IDisposable
             g.DrawString(timerText, _debugFont, Brushes.Orange, (_width - size.Width) / 2, 100);
         }
 
-        // UI / Debug
         string label = $"State: {_currentState} | Animals: {_landedAnimals.Count} | Diff: {_difficulty}";
         if (_currentState == GameState.GameOver)
         {
