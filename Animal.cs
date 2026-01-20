@@ -5,6 +5,8 @@ namespace AnimalTower;
 public sealed class Animal : PhysicsBody
 {
     public Color Color { get; set; } = Color.FromArgb(200, 100, 100);
+    public float FloorContactTime { get; set; }
+    public bool IsTouchingFloor { get; set; }
 
     // Constructor for backward compatibility (Box)
     public Animal(PointF position, SizeF size) : base(position, size)
