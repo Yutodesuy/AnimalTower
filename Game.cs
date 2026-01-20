@@ -173,49 +173,80 @@ public sealed class Game : IDisposable
             }
         }
 
-        if (_currentState == GameState.Falling && _currentAnimal != null)
+        // We run physics if we are falling or if there are landed animals (since they are dynamic)
+        // Actually, we should always run physics for landed animals if we want them to settle/fall.
+        // But the main loop logic depends on state.
+
+        bool physicsActive = (_currentState == GameState.Falling || _currentState == GameState.Landed || _currentState == GameState.Aiming);
+        // Even in Aiming, landed animals should settle if they were moving.
+
+        if (physicsActive)
         {
-            // --- PHYSICS UPDATE ---
+            // Collect all bodies participating in physics
+            var activeBodies = new List<Animal>();
+            activeBodies.AddRange(_landedAnimals);
 
-            // 1. Gravity and Forces
-            float gravity = 500f; // pixels/s^2
-            _currentAnimal.Velocity = new PointF(_currentAnimal.Velocity.X, _currentAnimal.Velocity.Y + gravity * dt);
-
-            // 2. Integration (Euler)
-            _currentAnimal.Position = new PointF(
-                _currentAnimal.Position.X + _currentAnimal.Velocity.X * dt,
-                _currentAnimal.Position.Y + _currentAnimal.Velocity.Y * dt
-            );
-
-            // Integrate Rotation
-            _currentAnimal.Rotation += _currentAnimal.AngularVelocity * dt;
-
-            // 3. Collision Resolution
-            bool collisionOccurred = false;
-
-            // 3a. Collision with Floor
-            if (CheckAndResolveFloorCollision(_currentAnimal))
+            if (_currentState == GameState.Falling && _currentAnimal != null)
             {
-                collisionOccurred = true;
+                activeBodies.Add(_currentAnimal);
             }
 
-            // 3b. Collision with Landed Animals
-            foreach (var landed in _landedAnimals)
+            float gravity = 500f; // pixels/s^2
+
+            // 1. Apply Gravity & Predict Position (Integration)
+            foreach (var body in activeBodies)
             {
-                if (ResolveCollision(_currentAnimal, landed))
+                // Velocity Integration
+                body.Velocity = new PointF(body.Velocity.X, body.Velocity.Y + gravity * dt);
+
+                // Position Integration
+                body.Position = new PointF(
+                    body.Position.X + body.Velocity.X * dt,
+                    body.Position.Y + body.Velocity.Y * dt
+                );
+
+                // Rotation Integration
+                body.Rotation += body.AngularVelocity * dt;
+            }
+
+            // 2. Iterative Collision Solver
+            // Running multiple iterations helps stabilize the stack and propagate forces
+            int iterations = 4;
+            bool currentHitSomething = false;
+
+            for (int k = 0; k < iterations; k++)
+            {
+                // Floor Collisions
+                foreach (var body in activeBodies)
                 {
-                    collisionOccurred = true;
+                    if (CheckAndResolveFloorCollision(body, dt))
+                    {
+                        if (body == _currentAnimal) currentHitSomething = true;
+                    }
+                }
+
+                // Body vs Body Collisions
+                for (int i = 0; i < activeBodies.Count; i++)
+                {
+                    for (int j = i + 1; j < activeBodies.Count; j++)
+                    {
+                        var a = activeBodies[i];
+                        var b = activeBodies[j];
+                        if (ResolveCollision(a, b, dt))
+                        {
+                            if (a == _currentAnimal || b == _currentAnimal) currentHitSomething = true;
+                        }
+                    }
                 }
             }
 
-            // State Transition: If speed is very low and hitting something, land it.
-            if (collisionOccurred)
+            // 3. Game Logic: Check landing condition for _currentAnimal
+            if (_currentState == GameState.Falling && _currentAnimal != null && currentHitSomething)
             {
                 float vSq = _currentAnimal.Velocity.X * _currentAnimal.Velocity.X + _currentAnimal.Velocity.Y * _currentAnimal.Velocity.Y;
                 float angSq = _currentAnimal.AngularVelocity * _currentAnimal.AngularVelocity;
 
-                // Thresholds: velocity squared < 100 (10 px/s) and angular velocity squared < 10 (~3 deg/s)
-                // Relaxed slightly to allow easier stacking
+                // Thresholds: velocity squared < 150 (approx 12 px/s) and angular velocity squared < 50 (~7 deg/s)
                 if (vSq < 150 && angSq < 50)
                 {
                     _currentState = GameState.Landed;
@@ -225,10 +256,23 @@ public sealed class Game : IDisposable
                 }
             }
 
-            // If it fell off screen
-            if (_currentAnimal != null && _currentAnimal.Position.Y > _height + 100)
+            // Check for Game Over (falling off screen)
+            for (int i = activeBodies.Count - 1; i >= 0; i--)
             {
-                _currentState = GameState.GameOver;
+                var body = activeBodies[i];
+                if (body.Position.Y > _height + 100)
+                {
+                    if (body == _currentAnimal)
+                    {
+                        _currentState = GameState.GameOver;
+                    }
+                    else
+                    {
+                        // Landed animal fell off? Remove it? Or Game Over?
+                        // Usually in tower games, if any piece falls, it's Game Over.
+                        _currentState = GameState.GameOver;
+                    }
+                }
             }
         }
     }
@@ -237,7 +281,7 @@ public sealed class Game : IDisposable
 
     // Separating Axis Theorem (SAT)
     // Returns true if collision resolved
-    private bool ResolveCollision(Animal a, PhysicsBody b)
+    private bool ResolveCollision(Animal a, PhysicsBody b, float dt)
     {
         PointF[] shapeA = a.GetTransformedVertices();
         PointF[] shapeB = b.GetTransformedVertices();
@@ -274,16 +318,27 @@ public sealed class Game : IDisposable
             normal = new PointF(-normal.X, -normal.Y);
         }
 
-        // Resolve Penetration
-        a.Position = new PointF(a.Position.X + normal.X * depth, a.Position.Y + normal.Y * depth);
+        // Slop (Tolerance) to prevent micro-jitter
+        float slop = 0.2f;
+        float correctionDepth = Math.Max(0, depth - slop);
+
+        if (correctionDepth > 0)
+        {
+            // Resolve Penetration
+            // Weighted by inverse mass (assumed equal for now, both 1.0)
+            // But we treat both as dynamic.
+            float percent = 0.5f; // Split correction
+            a.Position = new PointF(a.Position.X + normal.X * correctionDepth * percent, a.Position.Y + normal.Y * correctionDepth * percent);
+            b.Position = new PointF(b.Position.X - normal.X * correctionDepth * percent, b.Position.Y - normal.Y * correctionDepth * percent);
+        }
 
         // Compute Impulse
-        ApplyImpulse(a, b, normal);
+        ApplyImpulse(a, b, normal, dt);
 
         return true;
     }
 
-    private bool CheckAndResolveFloorCollision(Animal a)
+    private bool CheckAndResolveFloorCollision(Animal a, float dt)
     {
         // Floor check: Look for any vertex below floor Y
         PointF[] vertices = a.GetTransformedVertices();
@@ -316,19 +371,26 @@ public sealed class Game : IDisposable
             PointF normal = new PointF(0, -1);
             float depth = maxY - _floor.Y;
 
-            // Penetration resolution
-            a.Position = new PointF(a.Position.X, a.Position.Y - depth);
+            // Slop
+            float slop = 0.2f;
+            float correctionDepth = Math.Max(0, depth - slop);
+
+            if (correctionDepth > 0)
+            {
+                // Penetration resolution
+                a.Position = new PointF(a.Position.X, a.Position.Y - correctionDepth);
+            }
 
             // Impulse
             // Treat floor as infinite mass, stationary body
-            ApplyImpulseStatic(a, deepPoint, normal, _floor.Friction);
+            ApplyImpulseStatic(a, deepPoint, normal, _floor.Friction, dt);
             return true;
         }
 
         return false;
     }
 
-    private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal)
+    private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal, float dt)
     {
         // Simple impulse resolution
         // Velocity Relative
@@ -339,6 +401,13 @@ public sealed class Game : IDisposable
         if (velAlongNormal > 0) return; // Moving away
 
         float e = Math.Min(a.Restitution, b.Restitution);
+
+        // Resting Contact: If velocity is very low (gravity threshold), zero out restitution
+        // Gravity is 500. One frame is dt. 500 * dt is velocity gained in one frame.
+        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
+        {
+            e = 0.0f;
+        }
 
         float j = -(1 + e) * velAlongNormal;
         j /= (1 / a.Mass + 1 / b.Mass);
@@ -381,7 +450,7 @@ public sealed class Game : IDisposable
         }
     }
 
-    private void ApplyImpulseStatic(Animal a, PointF contactPoint, PointF normal, float frictionCoeff)
+    private void ApplyImpulseStatic(Animal a, PointF contactPoint, PointF normal, float frictionCoeff, float dt)
     {
         // r = vector from COM to contact point
         PointF r = new PointF(contactPoint.X - a.Position.X, contactPoint.Y - a.Position.Y);
@@ -406,6 +475,13 @@ public sealed class Game : IDisposable
         float effectiveMass = invMass + (rCrossN * rCrossN) * invI;
 
         float e = a.Restitution;
+
+        // Resting Contact: If velocity is very low (gravity threshold), zero out restitution
+        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
+        {
+            e = 0.0f;
+        }
+
         float j = -(1 + e) * velAlongNormal / effectiveMass;
 
         PointF impulse = new PointF(normal.X * j, normal.Y * j);
