@@ -31,6 +31,12 @@ public sealed class GameForm : Form
         MouseUp += OnMouseUp;
     }
 
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        _game.HandleInput(e.KeyCode);
+    }
+
     protected override void Dispose(bool disposing)
     {
         if (disposing)
