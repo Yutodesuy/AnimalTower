@@ -77,8 +77,21 @@ public sealed class Animal : PhysicsBody
 
     public static class Factory
     {
+<<<<<<< HEAD
         private static PointF[] CreateRect(float x, float y, float w, float h)
         {
+=======
+        // Global scale multiplier
+        private const float Scale = 1.5f;
+
+        private static PointF[] CreateRect(float x, float y, float w, float h)
+        {
+            // Scale dimensions and position
+            x *= Scale;
+            y *= Scale;
+            w *= Scale;
+            h *= Scale;
+>>>>>>> 0eab08c94d77a2348f42b6c10c6130a86d30062b
             return new PointF[]
             {
                 new PointF(x - w/2, y - h/2),
@@ -90,6 +103,14 @@ public sealed class Animal : PhysicsBody
 
         private static PointF[] CreateCirclePoly(float x, float y, float r, int segments = 8)
         {
+<<<<<<< HEAD
+=======
+            // Scale position and radius
+            x *= Scale;
+            y *= Scale;
+            r *= Scale;
+
+>>>>>>> 0eab08c94d77a2348f42b6c10c6130a86d30062b
             PointF[] verts = new PointF[segments];
             for(int i=0; i<segments; i++)
             {
@@ -99,6 +120,25 @@ public sealed class Animal : PhysicsBody
             return verts;
         }
 
+<<<<<<< HEAD
+=======
+        private static PointF[] CreateTriangleLocal(float x, float y, float size)
+        {
+             // Scale position and size
+             x *= Scale;
+             y *= Scale;
+             size *= Scale;
+
+             // Triangle centered at x,y
+             return new PointF[]
+             {
+                 new PointF(x, y - size),
+                 new PointF(x + size, y + size/2),
+                 new PointF(x - size, y + size/2)
+             };
+        }
+
+>>>>>>> 0eab08c94d77a2348f42b6c10c6130a86d30062b
         // 1. Elephant (Heavy, Grey)
         public static Animal CreateElephant(PointF pos)
         {
@@ -169,6 +209,7 @@ public sealed class Animal : PhysicsBody
             return animal;
         }
 
+<<<<<<< HEAD
         private static PointF[] CreateTriangleLocal(float x, float y, float size)
         {
              // Triangle centered at x,y
@@ -180,6 +221,8 @@ public sealed class Animal : PhysicsBody
              };
         }
 
+=======
+>>>>>>> 0eab08c94d77a2348f42b6c10c6130a86d30062b
         // 5. Lion (Mane, Yellow/Brown)
         public static Animal CreateLion(PointF pos)
         {
@@ -258,6 +301,7 @@ public sealed class Animal : PhysicsBody
             animal.Mass = 0.5f; // Light
             return animal;
         }
+<<<<<<< HEAD
 
         // 10. Turtle (Flat, Green)
         public static Animal CreateTurtle(PointF pos)
@@ -273,5 +317,7 @@ public sealed class Animal : PhysicsBody
             animal.Friction = 0.3f; // Slippery shell? Or grippy?
             return animal;
         }
+=======
+>>>>>>> 0eab08c94d77a2348f42b6c10c6130a86d30062b
     }
 }
