@@ -1,15 +1,13 @@
+using System.Drawing;
+
 namespace AnimalTower;
 
-public sealed class SupportBoard
+public sealed class SupportBoard : PhysicsBody
 {
-    public PointF Center { get; set; }
-    public SizeF Size { get; set; }
-    public float Rotation { get; set; }
-
-    public SupportBoard(PointF center, SizeF size)
+    public SupportBoard(PointF center, SizeF size) : base(center, size)
     {
-        Center = center;
-        Size = size;
-        Rotation = 0f;
+        IsStatic = true;
+        Mass = float.PositiveInfinity;
+        Friction = 0.5f;
     }
 }

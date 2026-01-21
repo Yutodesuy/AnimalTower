@@ -14,6 +14,7 @@ public sealed class Game : IDisposable
         Aiming,
         Falling,
         Landed, // Transitional state
+        PlacingBoard,
         GameOver
     }
 
@@ -29,6 +30,10 @@ public sealed class Game : IDisposable
     private Animal? _currentAnimal;
     private float _aimTimer; // Timer for forced drop
     private readonly List<Animal> _landedAnimals = new();
+    private readonly List<SupportBoard> _supportBoards = new();
+    private SupportBoard? _currentBoard;
+    private float _boardTimer;
+    private Point _mousePosition;
     private readonly Floor _floor; // We need a floor instance
     private readonly Random _random = new();
 
@@ -47,6 +52,7 @@ public sealed class Game : IDisposable
     private void StartNewGame()
     {
         _landedAnimals.Clear();
+        _supportBoards.Clear();
         _currentState = GameState.Aiming;
         UpdateFloorDimensions();
         SpawnAnimal();
@@ -158,8 +164,36 @@ public sealed class Game : IDisposable
         }
     }
 
+    private void StartBoardPlacement()
+    {
+        _currentState = GameState.PlacingBoard;
+        _boardTimer = 10.0f;
+
+        // Create a 120x20 support board
+        _currentBoard = new SupportBoard(_mousePosition, new SizeF(120, 20));
+        _currentBoard.Rotation = 0;
+    }
+
     public void Update(float dt)
     {
+        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
+        {
+            _boardTimer -= dt;
+
+            // Continuous rotation
+            _currentBoard.Rotation += 180f * dt; // 180 deg/sec
+
+            // Move to mouse (interpolation or direct set handled in MouseMove, but good to refresh here if needed)
+            _currentBoard.Position = _mousePosition;
+
+            if (_boardTimer <= 0)
+            {
+                // Time's up - cancel placement
+                _currentBoard = null;
+                SpawnAnimal();
+            }
+        }
+
         if (_currentState == GameState.Aiming && _currentAnimal != null)
         {
             _aimTimer -= dt;
@@ -194,6 +228,8 @@ public sealed class Game : IDisposable
             // 1. Apply Gravity & Predict Position (Integration)
             foreach (var body in activeBodies)
             {
+                if (body.IsStatic) continue;
+
                 // Velocity Integration
                 body.Velocity = new PointF(body.Velocity.X, body.Velocity.Y + gravity * dt);
 
@@ -211,9 +247,13 @@ public sealed class Game : IDisposable
             int iterations = 4;
             bool currentHitSomething = false;
 
+            // Combine active bodies with static support boards for collision checks
+            var allBodies = new List<PhysicsBody>(activeBodies.Cast<PhysicsBody>());
+            allBodies.AddRange(_supportBoards);
+
             for (int k = 0; k < iterations; k++)
             {
-                // Floor Collisions
+                // Floor Collisions (Only for active dynamic bodies)
                 foreach (var body in activeBodies)
                 {
                     if (CheckAndResolveFloorCollision(body, dt))
@@ -223,12 +263,16 @@ public sealed class Game : IDisposable
                 }
 
                 // Body vs Body Collisions
-                for (int i = 0; i < activeBodies.Count; i++)
+                for (int i = 0; i < allBodies.Count; i++)
                 {
-                    for (int j = i + 1; j < activeBodies.Count; j++)
+                    for (int j = i + 1; j < allBodies.Count; j++)
                     {
-                        var a = activeBodies[i];
-                        var b = activeBodies[j];
+                        var a = allBodies[i];
+                        var b = allBodies[j];
+
+                        // Skip static vs static
+                        if (a.IsStatic && b.IsStatic) continue;
+
                         if (ResolveCollision(a, b, dt))
                         {
                             if (a == _currentAnimal || b == _currentAnimal) currentHitSomething = true;
@@ -249,7 +293,16 @@ public sealed class Game : IDisposable
                     _currentState = GameState.Landed;
                     _landedAnimals.Add(_currentAnimal);
                     _currentAnimal = null;
-                    SpawnAnimal();
+
+                    // Trigger "Mini Plank" every 5 landed animals
+                    if (_landedAnimals.Count > 0 && _landedAnimals.Count % 5 == 0)
+                    {
+                        StartBoardPlacement();
+                    }
+                    else
+                    {
+                        SpawnAnimal();
+                    }
                 }
             }
 
@@ -293,7 +346,7 @@ public sealed class Game : IDisposable
 
     // Separating Axis Theorem (SAT)
     // Returns true if collision resolved
-    private bool ResolveCollision(Animal a, PhysicsBody b, float dt)
+    private bool ResolveCollision(PhysicsBody a, PhysicsBody b, float dt)
     {
         // Get all shapes for both bodies
         var shapesA = a.GetTransformedVertices();
@@ -331,10 +384,31 @@ public sealed class Game : IDisposable
 
         if (correctionDepth > 0)
         {
-            // Resolve Penetration
-            float percent = 0.5f;
-            a.Position = new PointF(a.Position.X + bestNormal.X * correctionDepth * percent, a.Position.Y + bestNormal.Y * correctionDepth * percent);
-            b.Position = new PointF(b.Position.X - bestNormal.X * correctionDepth * percent, b.Position.Y - bestNormal.Y * correctionDepth * percent);
+            // Resolve Penetration based on Inverse Mass
+            float invMassA = a.IsStatic ? 0 : 1.0f / a.Mass;
+            float invMassB = b.IsStatic ? 0 : 1.0f / b.Mass;
+            float totalInvMass = invMassA + invMassB;
+
+            if (totalInvMass > 0)
+            {
+                float movePerIM = correctionDepth / totalInvMass;
+
+                if (!a.IsStatic)
+                {
+                    a.Position = new PointF(
+                        a.Position.X + bestNormal.X * movePerIM * invMassA,
+                        a.Position.Y + bestNormal.Y * movePerIM * invMassA
+                    );
+                }
+
+                if (!b.IsStatic)
+                {
+                    b.Position = new PointF(
+                        b.Position.X - bestNormal.X * movePerIM * invMassB,
+                        b.Position.Y - bestNormal.Y * movePerIM * invMassB
+                    );
+                }
+            }
         }
 
         // Compute Impulse
@@ -431,7 +505,7 @@ public sealed class Game : IDisposable
         return false;
     }
 
-    private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal, float dt)
+    private void ApplyImpulse(PhysicsBody a, PhysicsBody b, PointF normal, float dt)
     {
         // Velocity Relative
         PointF rv = new PointF(a.Velocity.X - b.Velocity.X, a.Velocity.Y - b.Velocity.Y);
@@ -639,6 +713,43 @@ public sealed class Game : IDisposable
             DrawAnimal(animal);
         }
 
+        // Draw Support Boards
+        using (var boardBrush = new SolidBrush(Color.BurlyWood))
+        {
+            foreach (var board in _supportBoards)
+            {
+                var state = g.Save();
+                var shapes = board.GetTransformedVertices();
+                foreach (var vertices in shapes)
+                {
+                    g.FillPolygon(boardBrush, vertices);
+                    g.DrawPolygon(Pens.SaddleBrown, vertices);
+                }
+                g.Restore(state);
+            }
+        }
+
+        // Draw Current Board being placed
+        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
+        {
+            var state = g.Save();
+            var shapes = _currentBoard.GetTransformedVertices();
+            using (var brush = new SolidBrush(Color.FromArgb(180, Color.BurlyWood))) // Semi-transparent
+            {
+                foreach (var vertices in shapes)
+                {
+                    g.FillPolygon(brush, vertices);
+                    g.DrawPolygon(Pens.White, vertices);
+                }
+            }
+            g.Restore(state);
+
+            // Draw Timer
+            string timerText = $"PLACE BOARD: {_boardTimer:0.0}";
+            SizeF size = g.MeasureString(timerText, _debugFont);
+            g.DrawString(timerText, _debugFont, Brushes.LightGreen, (_width - size.Width) / 2, 100);
+        }
+
         if (_currentAnimal != null)
         {
             DrawAnimal(_currentAnimal);
@@ -670,10 +781,24 @@ public sealed class Game : IDisposable
 
     public void HandleMouseMove(Point position)
     {
+        _mousePosition = position;
+        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
+        {
+            _currentBoard.Position = new PointF(position.X, position.Y);
+        }
     }
 
     public void HandleMouseDown(MouseButtons button, Point position)
     {
+        if (_currentState == GameState.PlacingBoard && button == MouseButtons.Left && _currentBoard != null)
+        {
+            // Place the board
+            _supportBoards.Add(_currentBoard);
+            _currentBoard = null;
+
+            // Resume Game
+            SpawnAnimal();
+        }
     }
 
     public void HandleMouseUp(MouseButtons button, Point position)
