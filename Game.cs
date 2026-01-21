@@ -14,7 +14,6 @@ public sealed class Game : IDisposable
         Aiming,
         Falling,
         Landed, // Transitional state
-        PlacingBoard,
         GameOver
     }
 
@@ -30,10 +29,6 @@ public sealed class Game : IDisposable
     private Animal? _currentAnimal;
     private float _aimTimer; // Timer for forced drop
     private readonly List<Animal> _landedAnimals = new();
-    private readonly List<SupportBoard> _supportBoards = new();
-    private SupportBoard? _currentBoard;
-    private float _boardTimer;
-    private Point _mousePosition;
     private readonly Floor _floor; // We need a floor instance
     private readonly Random _random = new();
 
@@ -52,7 +47,6 @@ public sealed class Game : IDisposable
     private void StartNewGame()
     {
         _landedAnimals.Clear();
-        _supportBoards.Clear();
         _currentState = GameState.Aiming;
         UpdateFloorDimensions();
         SpawnAnimal();
@@ -84,8 +78,8 @@ public sealed class Game : IDisposable
         float startX = _width / 2f;
         float startY = 60f;
 
-        // Randomly select one of the 10 animals
-        int animalType = _random.Next(10);
+        // Randomly select one of the 9 animals (Turtle removed)
+        int animalType = _random.Next(9);
         PointF pos = new PointF(startX, startY);
 
         switch (animalType)
@@ -99,7 +93,6 @@ public sealed class Game : IDisposable
             case 6: _currentAnimal = Animal.Factory.CreateRabbit(pos); break;
             case 7: _currentAnimal = Animal.Factory.CreateCat(pos); break;
             case 8: _currentAnimal = Animal.Factory.CreateChick(pos); break;
-            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break;
             default: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
         }
 
@@ -164,69 +157,8 @@ public sealed class Game : IDisposable
         }
     }
 
-    private void StartBoardPlacement()
-    {
-        _currentState = GameState.PlacingBoard;
-        _boardTimer = 10.0f;
-
-        // Difficulty Settings
-        float scale = 1.0f;
-        List<BoardShape> availableShapes = new List<BoardShape> { BoardShape.Rectangle };
-
-        if (_difficulty == Difficulty.Normal)
-        {
-            scale = 0.5f;
-            availableShapes.Add(BoardShape.Triangle);
-            availableShapes.Add(BoardShape.Star);
-        }
-        else if (_difficulty == Difficulty.Hard)
-        {
-            scale = 0.25f; // 0.5 * 0.5
-            availableShapes.Add(BoardShape.Triangle);
-            availableShapes.Add(BoardShape.Star);
-        }
-
-        // Pick Shape
-        BoardShape shape = availableShapes[_random.Next(availableShapes.Count)];
-
-        // Determine Size
-        SizeF size;
-        if (shape == BoardShape.Rectangle)
-        {
-            size = new SizeF(120 * scale, 20 * scale);
-        }
-        else
-        {
-            // Square aspect for non-rect shapes to avoid severe distortion
-            // Use 60 (half of 120 width) as base dimension
-            float dim = 60 * scale;
-            size = new SizeF(dim, dim);
-        }
-
-        _currentBoard = new SupportBoard(_mousePosition, size, shape);
-        _currentBoard.Rotation = 0;
-    }
-
     public void Update(float dt)
     {
-        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
-        {
-            _boardTimer -= dt;
-
-            // Continuous rotation
-            _currentBoard.Rotation += 180f * dt; // 180 deg/sec
-
-            // Move to mouse (interpolation or direct set handled in MouseMove, but good to refresh here if needed)
-            _currentBoard.Position = _mousePosition;
-
-            if (_boardTimer <= 0)
-            {
-                // Time's up - cancel placement
-                _currentBoard = null;
-                SpawnAnimal();
-            }
-        }
-
         if (_currentState == GameState.Aiming && _currentAnimal != null)
         {
             _aimTimer -= dt;
@@ -261,8 +193,6 @@ public sealed class Game : IDisposable
             // 1. Apply Gravity & Predict Position (Integration)
             foreach (var body in activeBodies)
             {
-                if (body.IsStatic) continue;
-
                 // Velocity Integration
                 body.Velocity = new PointF(body.Velocity.X, body.Velocity.Y + gravity * dt);
 
@@ -280,13 +210,9 @@ public sealed class Game : IDisposable
             int iterations = 4;
             bool currentHitSomething = false;
 
-            // Combine active bodies with static support boards for collision checks
-            var allBodies = new List<PhysicsBody>(activeBodies.Cast<PhysicsBody>());
-            allBodies.AddRange(_supportBoards);
-
             for (int k = 0; k < iterations; k++)
             {
-                // Floor Collisions (Only for active dynamic bodies)
+                // Floor Collisions
                 foreach (var body in activeBodies)
                 {
                     if (CheckAndResolveFloorCollision(body, dt))
@@ -296,16 +222,12 @@ public sealed class Game : IDisposable
                 }
 
                 // Body vs Body Collisions
-                for (int i = 0; i < allBodies.Count; i++)
+                for (int i = 0; i < activeBodies.Count; i++)
                 {
-                    for (int j = i + 1; j < allBodies.Count; j++)
+                    for (int j = i + 1; j < activeBodies.Count; j++)
                     {
-                        var a = allBodies[i];
-                        var b = allBodies[j];
-
-                        // Skip static vs static
-                        if (a.IsStatic && b.IsStatic) continue;
-
+                        var a = activeBodies[i];
+                        var b = activeBodies[j];
                         if (ResolveCollision(a, b, dt))
                         {
                             if (a == _currentAnimal || b == _currentAnimal) currentHitSomething = true;
@@ -326,16 +248,7 @@ public sealed class Game : IDisposable
                     _currentState = GameState.Landed;
                     _landedAnimals.Add(_currentAnimal);
                     _currentAnimal = null;
-
-                    // Trigger "Mini Plank" every 5 landed animals
-                    if (_landedAnimals.Count > 0 && _landedAnimals.Count % 5 == 0)
-                    {
-                        StartBoardPlacement();
-                    }
-                    else
-                    {
-                        SpawnAnimal();
-                    }
+                    SpawnAnimal();
                 }
             }
 
@@ -379,7 +292,7 @@ public sealed class Game : IDisposable
 
     // Separating Axis Theorem (SAT)
     // Returns true if collision resolved
-    private bool ResolveCollision(PhysicsBody a, PhysicsBody b, float dt)
+    private bool ResolveCollision(Animal a, PhysicsBody b, float dt)
     {
         // Get all shapes for both bodies
         var shapesA = a.GetTransformedVertices();
@@ -387,8 +300,7 @@ public sealed class Game : IDisposable
 
         PointF bestNormal = PointF.Empty;
         float bestDepth = 0.0f;
-        PointF[]? bestShapeA = null;
-        PointF[]? bestShapeB = null;
+        PointF bestContactPoint = PointF.Empty; // Not fully utilized for multi-shape impulse yet, using center-based
         bool collisionFound = false;
 
         // Iterate through ALL shape pairs to find the deepest penetration
@@ -404,42 +316,13 @@ public sealed class Game : IDisposable
                     {
                         bestDepth = depth;
                         bestNormal = normal;
-                        bestShapeA = shapeA;
-                        bestShapeB = shapeB;
                         collisionFound = true;
                     }
                 }
             }
         }
 
-        if (!collisionFound || bestShapeA == null || bestShapeB == null) return false;
-
-        // Determine Contact Point (Approximate)
-        PointF contactPoint;
-        PointF vA = GetSupport(bestShapeA, new PointF(-bestNormal.X, -bestNormal.Y));
-        PointF vB = GetSupport(bestShapeB, bestNormal);
-
-        // Simple heuristic for contact point
-        bool aInB = IsPointInPolygon(vA, bestShapeB);
-        bool bInA = IsPointInPolygon(vB, bestShapeA);
-
-        if (aInB && bInA)
-        {
-             contactPoint = new PointF((vA.X + vB.X) / 2, (vA.Y + vB.Y) / 2);
-        }
-        else if (aInB)
-        {
-             contactPoint = vA;
-        }
-        else if (bInA)
-        {
-             contactPoint = vB;
-        }
-        else
-        {
-             // Edge-Edge or just touching
-             contactPoint = new PointF((vA.X + vB.X) / 2, (vA.Y + vB.Y) / 2);
-        }
+        if (!collisionFound) return false;
 
         // Slop (Tolerance)
         float slop = 0.2f;
@@ -447,35 +330,14 @@ public sealed class Game : IDisposable
 
         if (correctionDepth > 0)
         {
-            // Resolve Penetration based on Inverse Mass
-            float invMassA = a.IsStatic ? 0 : 1.0f / a.Mass;
-            float invMassB = b.IsStatic ? 0 : 1.0f / b.Mass;
-            float totalInvMass = invMassA + invMassB;
-
-            if (totalInvMass > 0)
-            {
-                float movePerIM = correctionDepth / totalInvMass;
-
-                if (!a.IsStatic)
-                {
-                    a.Position = new PointF(
-                        a.Position.X + bestNormal.X * movePerIM * invMassA,
-                        a.Position.Y + bestNormal.Y * movePerIM * invMassA
-                    );
-                }
-
-                if (!b.IsStatic)
-                {
-                    b.Position = new PointF(
-                        b.Position.X - bestNormal.X * movePerIM * invMassB,
-                        b.Position.Y - bestNormal.Y * movePerIM * invMassB
-                    );
-                }
-            }
+            // Resolve Penetration
+            float percent = 0.5f;
+            a.Position = new PointF(a.Position.X + bestNormal.X * correctionDepth * percent, a.Position.Y + bestNormal.Y * correctionDepth * percent);
+            b.Position = new PointF(b.Position.X - bestNormal.X * correctionDepth * percent, b.Position.Y - bestNormal.Y * correctionDepth * percent);
         }
 
         // Compute Impulse
-        ApplyImpulse(a, b, bestNormal, contactPoint, dt);
+        ApplyImpulse(a, b, bestNormal, dt);
 
         return true;
     }
@@ -568,74 +430,52 @@ public sealed class Game : IDisposable
         return false;
     }
 
-    private void ApplyImpulse(PhysicsBody a, PhysicsBody b, PointF normal, PointF contactPoint, float dt)
+    private void ApplyImpulse(Animal a, PhysicsBody b, PointF normal, float dt)
     {
-        PointF rA = new PointF(contactPoint.X - a.Position.X, contactPoint.Y - a.Position.Y);
-        PointF rB = new PointF(contactPoint.X - b.Position.X, contactPoint.Y - b.Position.Y);
-
-        PointF rv = new PointF(
-            (a.Velocity.X - a.AngularVelocity * 0.01745f * rA.Y) - (b.Velocity.X - b.AngularVelocity * 0.01745f * rB.Y),
-            (a.Velocity.Y + a.AngularVelocity * 0.01745f * rA.X) - (b.Velocity.Y + b.AngularVelocity * 0.01745f * rB.X)
-        );
+        // Velocity Relative
+        PointF rv = new PointF(a.Velocity.X - b.Velocity.X, a.Velocity.Y - b.Velocity.Y);
 
         float velAlongNormal = Dot(rv, normal);
 
-        if (velAlongNormal > 0) return;
-
-        float raCrossN = rA.X * normal.Y - rA.Y * normal.X;
-        float rbCrossN = rB.X * normal.Y - rB.Y * normal.X;
-
-        float invMassA = a.IsStatic ? 0 : 1.0f / a.Mass;
-        float invMassB = b.IsStatic ? 0 : 1.0f / b.Mass;
-        float invIA = a.IsStatic ? 0 : 1.0f / a.MomentOfInertia;
-        float invIB = b.IsStatic ? 0 : 1.0f / b.MomentOfInertia;
-
-        float effectiveMass = invMassA + invMassB +
-                              (raCrossN * raCrossN) * invIA +
-                              (rbCrossN * rbCrossN) * invIB;
+        if (velAlongNormal > 0) return; // Moving away
 
         float e = Math.Min(a.Restitution, b.Restitution);
-        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f) e = 0.0f;
 
-        float j = -(1 + e) * velAlongNormal / effectiveMass;
+        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
+        {
+            e = 0.0f;
+        }
+
+        float j = -(1 + e) * velAlongNormal;
+        j /= (1 / a.Mass + 1 / b.Mass);
 
         PointF impulse = new PointF(normal.X * j, normal.Y * j);
 
-        if (!a.IsStatic)
-        {
-             a.Velocity = new PointF(a.Velocity.X + impulse.X * invMassA, a.Velocity.Y + impulse.Y * invMassA);
-             a.AngularVelocity += (rA.X * impulse.Y - rA.Y * impulse.X) * invIA * 57.29f;
-        }
-        if (!b.IsStatic)
-        {
-             b.Velocity = new PointF(b.Velocity.X - impulse.X * invMassB, b.Velocity.Y - impulse.Y * invMassB);
-             b.AngularVelocity -= (rB.X * impulse.Y - rB.Y * impulse.X) * invIB * 57.29f;
-        }
+        // Apply Linear
+        a.Velocity = new PointF(a.Velocity.X + impulse.X / a.Mass, a.Velocity.Y + impulse.Y / a.Mass);
+        b.Velocity = new PointF(b.Velocity.X - impulse.X / b.Mass, b.Velocity.Y - impulse.Y / b.Mass);
 
         // Friction
-        PointF tangent = new PointF(-normal.Y, normal.X);
-        float rtA = rA.X * tangent.Y - rA.Y * tangent.X;
-        float rtB = rB.X * tangent.Y - rB.Y * tangent.X;
-
-        float effMassT = invMassA + invMassB + (rtA * rtA) * invIA + (rtB * rtB) * invIB;
-
-        float jt = -Dot(rv, tangent) / effMassT;
+        PointF tangent = new PointF(-normal.Y, normal.X); // Perpendicular
+        float jt = -Dot(rv, tangent);
+        jt /= (1 / a.Mass + 1 / b.Mass);
 
         float mu = (a.Friction + b.Friction) * 0.5f;
         float maxJt = j * mu;
         if (Math.Abs(jt) > maxJt) jt = Math.Sign(jt) * maxJt;
 
         PointF frictionImpulse = new PointF(tangent.X * jt, tangent.Y * jt);
+        a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X / a.Mass, a.Velocity.Y + frictionImpulse.Y / a.Mass);
+        b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X / b.Mass, b.Velocity.Y - frictionImpulse.Y / b.Mass);
 
-        if (!a.IsStatic)
+        // Induce rotation
+        float dist = (float)Math.Sqrt(Math.Pow(a.Position.X - b.Position.X, 2) + Math.Pow(a.Position.Y - b.Position.Y, 2));
+        if (dist > 1.0f)
         {
-             a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X * invMassA, a.Velocity.Y + frictionImpulse.Y * invMassA);
-             a.AngularVelocity += (rA.X * frictionImpulse.Y - rA.Y * frictionImpulse.X) * invIA * 57.29f;
-        }
-        if (!b.IsStatic)
-        {
-             b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X * invMassB, b.Velocity.Y - frictionImpulse.Y * invMassB);
-             b.AngularVelocity -= (rB.X * frictionImpulse.Y - rB.Y * frictionImpulse.X) * invIB * 57.29f;
+            PointF ba = new PointF(a.Position.X - b.Position.X, a.Position.Y - b.Position.Y);
+            float torqueVal = ba.X * impulse.Y - ba.Y * impulse.X;
+            a.AngularVelocity += (torqueVal * 0.1f) / a.MomentOfInertia;
+            b.AngularVelocity -= (torqueVal * 0.1f) / b.MomentOfInertia;
         }
     }
 
@@ -736,38 +576,6 @@ public sealed class Game : IDisposable
         return new PointF(p.X / len, p.Y / len);
     }
 
-    private PointF GetSupport(PointF[] vertices, PointF dir)
-    {
-        float maxDot = float.MinValue;
-        PointF bestV = PointF.Empty;
-        foreach (var v in vertices)
-        {
-            float dot = v.X * dir.X + v.Y * dir.Y;
-            if (dot > maxDot)
-            {
-                maxDot = dot;
-                bestV = v;
-            }
-        }
-        return bestV;
-    }
-
-    private bool IsPointInPolygon(PointF p, PointF[] poly)
-    {
-        int crossings = 0;
-        for (int i = 0; i < poly.Length; i++)
-        {
-             PointF a = poly[i];
-             PointF b = poly[(i + 1) % poly.Length];
-             if ((a.Y > p.Y) != (b.Y > p.Y))
-             {
-                 float intersectX = (b.X - a.X) * (p.Y - a.Y) / (b.Y - a.Y) + a.X;
-                 if (p.X < intersectX) crossings++;
-             }
-        }
-        return (crossings % 2) != 0;
-    }
-
     public void Render(Graphics g)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -830,43 +638,6 @@ public sealed class Game : IDisposable
             DrawAnimal(animal);
         }
 
-        // Draw Support Boards
-        using (var boardBrush = new SolidBrush(Color.BurlyWood))
-        {
-            foreach (var board in _supportBoards)
-            {
-                var state = g.Save();
-                var shapes = board.GetTransformedVertices();
-                foreach (var vertices in shapes)
-                {
-                    g.FillPolygon(boardBrush, vertices);
-                    g.DrawPolygon(Pens.SaddleBrown, vertices);
-                }
-                g.Restore(state);
-            }
-        }
-
-        // Draw Current Board being placed
-        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
-        {
-            var state = g.Save();
-            var shapes = _currentBoard.GetTransformedVertices();
-            using (var brush = new SolidBrush(Color.FromArgb(180, Color.BurlyWood))) // Semi-transparent
-            {
-                foreach (var vertices in shapes)
-                {
-                    g.FillPolygon(brush, vertices);
-                    g.DrawPolygon(Pens.White, vertices);
-                }
-            }
-            g.Restore(state);
-
-            // Draw Timer
-            string timerText = $"PLACE BOARD: {_boardTimer:0.0}";
-            SizeF size = g.MeasureString(timerText, _debugFont);
-            g.DrawString(timerText, _debugFont, Brushes.LightGreen, (_width - size.Width) / 2, 100);
-        }
-
         if (_currentAnimal != null)
         {
             DrawAnimal(_currentAnimal);
@@ -880,12 +651,30 @@ public sealed class Game : IDisposable
         }
 
         string label = $"State: {_currentState} | Animals: {_landedAnimals.Count} | Diff: {_difficulty}";
+        g.DrawString(label, _debugFont, Brushes.Gainsboro, 10, 10);
+
         if (_currentState == GameState.GameOver)
         {
-            label = "GAME OVER - Press R or Space to Restart";
-        }
+            // Rich Game Over Screen
+            using var overlayBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0)); // Semi-transparent black
+            g.FillRectangle(overlayBrush, 0, 0, _width, _height);
 
-        g.DrawString(label, _debugFont, Brushes.Gainsboro, 10, 10);
+            using var gameOverFont = new Font("Segoe UI", 60, FontStyle.Bold);
+            using var scoreFont = new Font("Segoe UI", 30, FontStyle.Bold);
+            using var instructFont = new Font("Segoe UI", 20);
+
+            string gameOverText = "GAME OVER";
+            SizeF goSize = g.MeasureString(gameOverText, gameOverFont);
+            g.DrawString(gameOverText, gameOverFont, Brushes.Red, (_width - goSize.Width) / 2, _height / 3);
+
+            string scoreText = $"Final Score: {_landedAnimals.Count}";
+            SizeF scoreSize = g.MeasureString(scoreText, scoreFont);
+            g.DrawString(scoreText, scoreFont, Brushes.White, (_width - scoreSize.Width) / 2, _height / 2);
+
+            string instructText = "Press Space to Restart";
+            SizeF instSize = g.MeasureString(instructText, instructFont);
+            g.DrawString(instructText, instructFont, Brushes.LightGray, (_width - instSize.Width) / 2, _height / 2 + 80);
+        }
     }
 
     public void Resize(int width, int height)
@@ -898,24 +687,10 @@ public sealed class Game : IDisposable
 
     public void HandleMouseMove(Point position)
     {
-        _mousePosition = position;
-        if (_currentState == GameState.PlacingBoard && _currentBoard != null)
-        {
-            _currentBoard.Position = new PointF(position.X, position.Y);
-        }
     }
 
     public void HandleMouseDown(MouseButtons button, Point position)
     {
-        if (_currentState == GameState.PlacingBoard && button == MouseButtons.Left && _currentBoard != null)
-        {
-            // Place the board
-            _supportBoards.Add(_currentBoard);
-            _currentBoard = null;
-
-            // Resume Game
-            SpawnAnimal();
-        }
     }
 
     public void HandleMouseUp(MouseButtons button, Point position)

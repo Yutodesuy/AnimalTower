@@ -77,8 +77,16 @@ public sealed class Animal : PhysicsBody
 
     public static class Factory
     {
+        // Global scale multiplier
+        private const float Scale = 1.5f;
+
         private static PointF[] CreateRect(float x, float y, float w, float h)
         {
+            // Scale dimensions and position
+            x *= Scale;
+            y *= Scale;
+            w *= Scale;
+            h *= Scale;
             return new PointF[]
             {
                 new PointF(x - w/2, y - h/2),
@@ -90,6 +98,11 @@ public sealed class Animal : PhysicsBody
 
         private static PointF[] CreateCirclePoly(float x, float y, float r, int segments = 8)
         {
+            // Scale position and radius
+            x *= Scale;
+            y *= Scale;
+            r *= Scale;
+
             PointF[] verts = new PointF[segments];
             for(int i=0; i<segments; i++)
             {
@@ -97,6 +110,22 @@ public sealed class Animal : PhysicsBody
                 verts[i] = new PointF(x + r * (float)Math.Cos(ang), y + r * (float)Math.Sin(ang));
             }
             return verts;
+        }
+
+        private static PointF[] CreateTriangleLocal(float x, float y, float size)
+        {
+             // Scale position and size
+             x *= Scale;
+             y *= Scale;
+             size *= Scale;
+
+             // Triangle centered at x,y
+             return new PointF[]
+             {
+                 new PointF(x, y - size),
+                 new PointF(x + size, y + size/2),
+                 new PointF(x - size, y + size/2)
+             };
         }
 
         // 1. Elephant (Heavy, Grey)
@@ -167,17 +196,6 @@ public sealed class Animal : PhysicsBody
             var animal = new Animal(pos, shapes, Color.DarkGray);
             animal.Mass = 2.8f;
             return animal;
-        }
-
-        private static PointF[] CreateTriangleLocal(float x, float y, float size)
-        {
-             // Triangle centered at x,y
-             return new PointF[]
-             {
-                 new PointF(x, y - size),
-                 new PointF(x + size, y + size/2),
-                 new PointF(x - size, y + size/2)
-             };
         }
 
         // 5. Lion (Mane, Yellow/Brown)
@@ -256,21 +274,6 @@ public sealed class Animal : PhysicsBody
 
             var animal = new Animal(pos, shapes, Color.Yellow);
             animal.Mass = 0.5f; // Light
-            return animal;
-        }
-
-        // 10. Turtle (Flat, Green)
-        public static Animal CreateTurtle(PointF pos)
-        {
-            var shapes = new List<PointF[]>();
-            // Shell
-            shapes.Add(CreateRect(0, 0, 50, 25));
-            // Head
-            shapes.Add(CreateRect(-30, 0, 15, 15));
-
-            var animal = new Animal(pos, shapes, Color.ForestGreen);
-            animal.Mass = 1.5f;
-            animal.Friction = 0.3f; // Slippery shell? Or grippy?
             return animal;
         }
     }

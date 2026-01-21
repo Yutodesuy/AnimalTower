@@ -14,7 +14,6 @@ public class PhysicsBody
     public float Rotation { get; set; } // In degrees
     public float AngularVelocity { get; set; }
 
-    public bool IsStatic { get; set; } = false;
     public float Mass { get; set; } = 1.0f;
     public float Restitution { get; set; } = 0.2f; // Bounciness
     public float Friction { get; set; } = 0.5f;
