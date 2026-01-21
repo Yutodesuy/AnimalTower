@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AnimalTower")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+805fe493b235be73ae52cc078d465dfa72555347")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+82a493acf9ac210de600c85adef447ea3e8c1fc3")]
 [assembly: System.Reflection.AssemblyProductAttribute("AnimalTower")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AnimalTower")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
