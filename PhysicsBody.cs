@@ -8,24 +8,20 @@ public class PhysicsBody
     public PointF Velocity { get; set; }
     public PointF Acceleration { get; set; }
 
-    // Internal shapes relative to (0,0) center. Each shape is a convex polygon.
     protected List<PointF[]> LocalShapes { get; set; }
 
-    public float Rotation { get; set; } // In degrees
+    public float Rotation { get; set; }
     public float AngularVelocity { get; set; }
-
+    public bool IsStatic { get; set; }
     public float Mass { get; set; } = 1.0f;
-    public float Restitution { get; set; } = 0.2f; // Bounciness
+    public float Restitution { get; set; } = 0.2f;
     public float Friction { get; set; } = 0.5f;
 
-    // Moment of Inertia approximation using bounding box
     public float MomentOfInertia
     {
         get
         {
-            // Approximate as a box covering all shapes
             var size = GetBoundingSize();
-            // I = m * (w^2 + h^2) / 12
             return Mass * (size.Width * size.Width + size.Height * size.Height) / 12f;
         }
     }
@@ -51,7 +47,6 @@ public class PhysicsBody
         Acceleration = PointF.Empty;
         LocalShapes = new List<PointF[]>();
 
-        // Default to box shape for backward compatibility
         float hw = size.Width / 2f;
         float hh = size.Height / 2f;
         var box = new PointF[]
@@ -98,7 +93,7 @@ public class PhysicsBody
             }
         }
 
-        if (minX > maxX) return SizeF.Empty; // Should not happen if shapes exist
+        if (minX > maxX) return SizeF.Empty;
 
         return new SizeF(maxX - minX, maxY - minY);
     }
@@ -108,8 +103,6 @@ public class PhysicsBody
         if (LocalShapes == null) return new List<PointF[]>();
 
         var result = new List<PointF[]>();
-
-        // Rotation matrix
         double rad = Rotation * Math.PI / 180.0;
         float cos = (float)Math.Cos(rad);
         float sin = (float)Math.Sin(rad);
