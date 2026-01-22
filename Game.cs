@@ -37,6 +37,12 @@ public sealed class Game : IDisposable
     private readonly Floor _floor;
     private readonly Random _random = new();
 
+    // Title Screen Slide State
+    private int _titleSlideIndex = 0;
+    // 0: Intro/Title
+    // 1: How to Play (About)
+    // 2: Difficulty Select
+
     // New fields for stability timeout
     private float _contactTimer;
     private bool _hasContacted;
@@ -49,6 +55,7 @@ public sealed class Game : IDisposable
 
         _floor = new Floor(_height - 50, _width);
         _currentState = GameState.Title;
+        _titleSlideIndex = 0;
     }
 
     private void StartNewGame()
@@ -108,7 +115,7 @@ public sealed class Game : IDisposable
             case 6: _currentAnimal = Animal.Factory.CreateRabbit(pos); break;
             case 7: _currentAnimal = Animal.Factory.CreateCat(pos); break;
             case 8: _currentAnimal = Animal.Factory.CreateChick(pos); break;
-            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break;
+            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break; // Note: Turtle logic exists in factory but was mentioned removed. Keeping factory call if valid.
             default: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
         }
 
@@ -133,29 +140,25 @@ public sealed class Game : IDisposable
     {
         if (_currentState == GameState.Title)
         {
-            int difficultyCount = Enum.GetValues(typeof(Difficulty)).Length;
             switch (key)
             {
-                case Keys.Up:
-                    _difficulty = (Difficulty)(((int)_difficulty + difficultyCount - 1) % difficultyCount);
-                    break;
-                case Keys.Down:
-                    _difficulty = (Difficulty)(((int)_difficulty + 1) % difficultyCount);
-                    break;
                 case Keys.Enter:
-                    StartNewGame();
+                case Keys.Space:
+                    _titleSlideIndex++;
+                    if (_titleSlideIndex > 2)
+                    {
+                        StartNewGame();
+                    }
                     break;
-                case Keys.D1:
-                case Keys.NumPad1:
-                    _difficulty = Difficulty.Easy;
+                case Keys.Escape:
+                case Keys.Back:
+                    if (_titleSlideIndex > 0) _titleSlideIndex--;
                     break;
-                case Keys.D2:
-                case Keys.NumPad2:
-                    _difficulty = Difficulty.Normal;
+                case Keys.Left:
+                    if (_titleSlideIndex == 2) CycleDifficulty(-1);
                     break;
-                case Keys.D3:
-                case Keys.NumPad3:
-                    _difficulty = Difficulty.Hard;
+                case Keys.Right:
+                    if (_titleSlideIndex == 2) CycleDifficulty(1);
                     break;
             }
         }
@@ -181,8 +184,19 @@ public sealed class Game : IDisposable
             if (key == Keys.R || key == Keys.Space || key == Keys.Enter)
             {
                 _currentState = GameState.Title;
+                _titleSlideIndex = 0; // Reset to start of title sequence
             }
         }
+    }
+
+    private void CycleDifficulty(int direction)
+    {
+        int count = Enum.GetValues(typeof(Difficulty)).Length;
+        int current = (int)_difficulty;
+        current += direction;
+        if (current < 0) current = count - 1;
+        if (current >= count) current = 0;
+        _difficulty = (Difficulty)current;
     }
 
     private void StartBoardPlacement()
@@ -760,38 +774,103 @@ public sealed class Game : IDisposable
 
         if (_currentState == GameState.Title)
         {
-            using var titleBrush = new SolidBrush(Color.White);
-            using var titleFont = new Font("Segoe UI", 32, FontStyle.Bold);
-            using var subFont = new Font("Segoe UI", 16);
-            using var descFont = new Font("Segoe UI", 10);
+            using var titleFont = new Font("Segoe UI", 48, FontStyle.Bold);
+            using var headerFont = new Font("Segoe UI", 32, FontStyle.Bold);
+            using var bodyFont = new Font("Segoe UI", 24);
+            using var navFont = new Font("Segoe UI", 16);
+            using var whiteBrush = new SolidBrush(Color.White);
+            using var yellowBrush = new SolidBrush(Color.Yellow);
+            using var grayBrush = new SolidBrush(Color.LightGray);
 
-            string title = "ANIMAL TOWER";
-            SizeF titleSize = g.MeasureString(title, titleFont);
-            g.DrawString(title, titleFont, titleBrush, (_width - titleSize.Width) / 2, _height / 4);
+            float cx = _width / 2;
+            float cy = _height / 2;
 
-            float startY = _height / 2 - 50;
-            foreach (Difficulty diff in Enum.GetValues(typeof(Difficulty)))
+            if (_titleSlideIndex == 0)
             {
-                string text = diff.ToString();
-                Brush brush = diff == _difficulty ? Brushes.Yellow : Brushes.White;
-                if (diff == _difficulty) text = "> " + text + " <";
+                // Slide 0: Title
+                string title = "ANIMAL TOWER";
+                SizeF tSize = g.MeasureString(title, titleFont);
+                g.DrawString(title, titleFont, whiteBrush, cx - tSize.Width / 2, cy - 100);
 
-                SizeF textSize = g.MeasureString(text, subFont);
-                g.DrawString(text, subFont, brush, (_width - textSize.Width) / 2, startY);
+                string sub = "Press SPACE to Start";
+                SizeF sSize = g.MeasureString(sub, navFont);
+                g.DrawString(sub, navFont, grayBrush, cx - sSize.Width / 2, cy + 50);
+            }
+            else if (_titleSlideIndex == 1)
+            {
+                // Slide 1: About / How to Play
+                string header = "HOW TO PLAY";
+                SizeF hSize = g.MeasureString(header, headerFont);
+                g.DrawString(header, headerFont, whiteBrush, cx - hSize.Width / 2, cy - 150);
 
-                // Smart List / Description
-                string desc = "";
-                switch(diff) {
-                    case Difficulty.Easy: desc = "Width: 75% | Friction: High | Plank: Every 5"; break;
-                    case Difficulty.Normal: desc = "Width: 50% | Friction: Med | Plank: Every 6"; break;
-                    case Difficulty.Hard: desc = "Width: 30% | Friction: Low | Plank: Every 7 (+Start)"; break;
+                string[] lines = {
+                    "1. DROP animals",
+                    "2. STACK them high",
+                    "3. Don't let them FALL!"
+                };
+
+                float currentY = cy - 50;
+                foreach(var line in lines)
+                {
+                    SizeF lSize = g.MeasureString(line, bodyFont);
+                    g.DrawString(line, bodyFont, grayBrush, cx - lSize.Width / 2, currentY);
+                    currentY += 40;
                 }
 
-                SizeF descSize = g.MeasureString(desc, descFont);
-                g.DrawString(desc, descFont, Brushes.Gray, (_width - descSize.Width) / 2, startY + textSize.Height + 5);
-
-                startY += textSize.Height + 40;
+                string sub = "Press SPACE for Next";
+                SizeF sSize = g.MeasureString(sub, navFont);
+                g.DrawString(sub, navFont, whiteBrush, cx - sSize.Width / 2, cy + 150);
             }
+            else if (_titleSlideIndex == 2)
+            {
+                // Slide 2: Difficulty Select
+                string header = "SELECT MODE";
+                SizeF hSize = g.MeasureString(header, headerFont);
+                g.DrawString(header, headerFont, whiteBrush, cx - hSize.Width / 2, cy - 150);
+
+                // Carousel
+                string diffText = $"< {_difficulty} >";
+                SizeF dSize = g.MeasureString(diffText, titleFont);
+                g.DrawString(diffText, titleFont, yellowBrush, cx - dSize.Width / 2, cy - 30);
+
+                // Description
+                string desc = "";
+                 switch(_difficulty) {
+                    case Difficulty.Easy: desc = "Wider Floor | More Friction\nPlanks: Frequent"; break;
+                    case Difficulty.Normal: desc = "Standard Physics\nPlanks: Balanced"; break;
+                    case Difficulty.Hard: desc = "Narrow Floor | Slippery\nPlanks: Sparse"; break;
+                }
+
+                string[] descLines = desc.Split('\n');
+                float currentY = cy + 60;
+                foreach(var line in descLines)
+                {
+                    SizeF lSize = g.MeasureString(line, navFont);
+                    g.DrawString(line, navFont, grayBrush, cx - lSize.Width / 2, currentY);
+                    currentY += 30;
+                }
+
+                string sub = "Press SPACE to PLAY";
+                SizeF sSize = g.MeasureString(sub, navFont);
+                g.DrawString(sub, navFont, whiteBrush, cx - sSize.Width / 2, cy + 180);
+            }
+
+            // Render Pagination Dots
+            float dotY = _height - 50;
+            float totalW = 3 * 20; // 3 dots, 20px spacing
+            float startX = cx - totalW / 2;
+            for(int i = 0; i < 3; i++)
+            {
+                if (i == _titleSlideIndex)
+                {
+                    g.FillEllipse(Brushes.White, startX + i * 20, dotY, 10, 10);
+                }
+                else
+                {
+                    g.DrawEllipse(Pens.Gray, startX + i * 20, dotY, 10, 10);
+                }
+            }
+
             return;
         }
 
