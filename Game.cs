@@ -53,7 +53,15 @@ public sealed class Game : IDisposable
         _supportBoards.Clear();
         _currentState = GameState.Aiming;
         UpdateFloorDimensions();
-        SpawnAnimal();
+
+        if (_difficulty == Difficulty.Hard)
+        {
+            StartBoardPlacement();
+        }
+        else
+        {
+            SpawnAnimal();
+        }
     }
 
     private void UpdateFloorDimensions()
@@ -71,7 +79,7 @@ public sealed class Game : IDisposable
                 _floor.Friction = 0.5f;
                 break;
             case Difficulty.Hard:
-                floorWidth = _width * 0.25f;
+                floorWidth = _width * 0.3f;
                 break;
         }
         _floor.Width = floorWidth;
@@ -98,6 +106,15 @@ public sealed class Game : IDisposable
             case 8: _currentAnimal = Animal.Factory.CreateChick(pos); break;
             case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break;
             default: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
+        }
+
+        if (_difficulty == Difficulty.Normal)
+        {
+            _currentAnimal.Restitution *= 0.7f;
+        }
+        else if (_difficulty == Difficulty.Easy)
+        {
+            _currentAnimal.Restitution *= 0.4f;
         }
 
         _currentState = GameState.Aiming;
@@ -196,6 +213,15 @@ public sealed class Game : IDisposable
 
         _currentBoard = new SupportBoard(_mousePosition, size, shape);
         _currentBoard.Rotation = 0;
+
+        if (_difficulty == Difficulty.Normal)
+        {
+            _currentBoard.Restitution *= 0.7f;
+        }
+        else if (_difficulty == Difficulty.Easy)
+        {
+            _currentBoard.Restitution *= 0.4f;
+        }
     }
 
     public void Update(float dt)
