@@ -37,6 +37,10 @@ public sealed class Game : IDisposable
     private readonly Floor _floor;
     private readonly Random _random = new();
 
+    // New fields for stability timeout
+    private float _contactTimer;
+    private bool _hasContacted;
+
     public Game(int width, int height)
     {
         _width = Math.Max(1, width);
@@ -119,6 +123,10 @@ public sealed class Game : IDisposable
 
         _currentState = GameState.Aiming;
         _aimTimer = 5.0f;
+
+        // Reset contact tracking
+        _contactTimer = 0f;
+        _hasContacted = false;
     }
 
     public void HandleInput(Keys key)
@@ -316,18 +324,28 @@ public sealed class Game : IDisposable
                 }
             }
 
-            if (_currentState == GameState.Falling && _currentAnimal != null && currentHitSomething)
+            if (_currentState == GameState.Falling && _currentAnimal != null)
             {
+                if (currentHitSomething) _hasContacted = true;
+                if (_hasContacted) _contactTimer += dt;
+
                 float vSq = _currentAnimal.Velocity.X * _currentAnimal.Velocity.X + _currentAnimal.Velocity.Y * _currentAnimal.Velocity.Y;
                 float angSq = _currentAnimal.AngularVelocity * _currentAnimal.AngularVelocity;
 
-                if (vSq < 150 && angSq < 50)
+                bool isStable = currentHitSomething && vSq < 150 && angSq < 50;
+                bool isTimeout = _hasContacted && _contactTimer > 3.0f;
+
+                if (isStable || isTimeout)
                 {
                     _currentState = GameState.Landed;
                     _landedAnimals.Add(_currentAnimal);
                     _currentAnimal = null;
 
-                    if (_landedAnimals.Count > 0 && _landedAnimals.Count % 5 == 0)
+                    int threshold = 5;
+                    if (_difficulty == Difficulty.Normal) threshold = 6;
+                    if (_difficulty == Difficulty.Hard) threshold = 7;
+
+                    if (_landedAnimals.Count > 0 && _landedAnimals.Count % threshold == 0)
                     {
                         StartBoardPlacement();
                     }
@@ -745,12 +763,13 @@ public sealed class Game : IDisposable
             using var titleBrush = new SolidBrush(Color.White);
             using var titleFont = new Font("Segoe UI", 32, FontStyle.Bold);
             using var subFont = new Font("Segoe UI", 16);
+            using var descFont = new Font("Segoe UI", 10);
 
             string title = "ANIMAL TOWER";
             SizeF titleSize = g.MeasureString(title, titleFont);
-            g.DrawString(title, titleFont, titleBrush, (_width - titleSize.Width) / 2, _height / 3);
+            g.DrawString(title, titleFont, titleBrush, (_width - titleSize.Width) / 2, _height / 4);
 
-            float startY = _height / 2;
+            float startY = _height / 2 - 50;
             foreach (Difficulty diff in Enum.GetValues(typeof(Difficulty)))
             {
                 string text = diff.ToString();
@@ -759,7 +778,19 @@ public sealed class Game : IDisposable
 
                 SizeF textSize = g.MeasureString(text, subFont);
                 g.DrawString(text, subFont, brush, (_width - textSize.Width) / 2, startY);
-                startY += textSize.Height + 10;
+
+                // Smart List / Description
+                string desc = "";
+                switch(diff) {
+                    case Difficulty.Easy: desc = "Width: 75% | Friction: High | Plank: Every 5"; break;
+                    case Difficulty.Normal: desc = "Width: 50% | Friction: Med | Plank: Every 6"; break;
+                    case Difficulty.Hard: desc = "Width: 30% | Friction: Low | Plank: Every 7 (+Start)"; break;
+                }
+
+                SizeF descSize = g.MeasureString(desc, descFont);
+                g.DrawString(desc, descFont, Brushes.Gray, (_width - descSize.Width) / 2, startY + textSize.Height + 5);
+
+                startY += textSize.Height + 40;
             }
             return;
         }
