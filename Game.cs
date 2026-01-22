@@ -341,6 +341,24 @@ public sealed class Game : IDisposable
                     _landedAnimals.Add(_currentAnimal);
                     _currentAnimal = null;
 
+                    // Fix animals logic
+                    int fixThreshold = 20;
+                    if (_difficulty == Difficulty.Normal) fixThreshold = 15;
+                    if (_difficulty == Difficulty.Hard) fixThreshold = 10;
+
+                    if (_landedAnimals.Count >= fixThreshold)
+                    {
+                        int indexToFix = _landedAnimals.Count - fixThreshold;
+                        if (indexToFix >= 0 && indexToFix < _landedAnimals.Count)
+                        {
+                            var fixedAnimal = _landedAnimals[indexToFix];
+                            fixedAnimal.IsStatic = true;
+                            fixedAnimal.Mass = float.PositiveInfinity;
+                            fixedAnimal.Velocity = PointF.Empty;
+                            fixedAnimal.AngularVelocity = 0;
+                        }
+                    }
+
                     int threshold = 5;
                     if (_difficulty == Difficulty.Normal) threshold = 6;
                     if (_difficulty == Difficulty.Hard) threshold = 7;
