@@ -36,6 +36,7 @@ public sealed class Game : IDisposable
     private Point _mousePosition;
     private readonly Floor _floor;
     private readonly Random _random = new();
+    private float _nextTurnTimer;
 
     // New fields for stability timeout
     private float _contactTimer;
@@ -247,6 +248,26 @@ public sealed class Game : IDisposable
             }
         }
 
+        if (_currentState == GameState.Landed)
+        {
+            _nextTurnTimer -= dt;
+            if (_nextTurnTimer <= 0)
+            {
+                int threshold = 5;
+                if (_difficulty == Difficulty.Normal) threshold = 6;
+                if (_difficulty == Difficulty.Hard) threshold = 7;
+
+                if (_landedAnimals.Count > 0 && _landedAnimals.Count % threshold == 0)
+                {
+                    StartBoardPlacement();
+                }
+                else
+                {
+                    SpawnAnimal();
+                }
+            }
+        }
+
         if (_currentState == GameState.Aiming && _currentAnimal != null)
         {
             _aimTimer -= dt;
@@ -359,18 +380,7 @@ public sealed class Game : IDisposable
                         }
                     }
 
-                    int threshold = 5;
-                    if (_difficulty == Difficulty.Normal) threshold = 6;
-                    if (_difficulty == Difficulty.Hard) threshold = 7;
-
-                    if (_landedAnimals.Count > 0 && _landedAnimals.Count % threshold == 0)
-                    {
-                        StartBoardPlacement();
-                    }
-                    else
-                    {
-                        SpawnAnimal();
-                    }
+                    _nextTurnTimer = 2.5f;
                 }
             }
 
