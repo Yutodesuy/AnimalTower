@@ -15,7 +15,8 @@ public sealed class Game : IDisposable
         Falling,
         Landed, // Transitional state
         PlacingBoard,
-        GameOver
+        GameOver,
+        FAQ
     }
 
     public enum Difficulty
@@ -36,6 +37,7 @@ public sealed class Game : IDisposable
     private Point _mousePosition;
     private readonly Floor _floor;
     private readonly Random _random = new();
+    private readonly FAQManager _faqManager;
 
     // New fields for stability timeout
     private float _contactTimer;
@@ -49,6 +51,9 @@ public sealed class Game : IDisposable
 
         _floor = new Floor(_height - 50, _width);
         _currentState = GameState.Title;
+
+        _faqManager = new FAQManager();
+        _faqManager.Initialize();
     }
 
     private void StartNewGame()
@@ -145,6 +150,10 @@ public sealed class Game : IDisposable
                 case Keys.Enter:
                     StartNewGame();
                     break;
+                case Keys.H:
+                case Keys.F1:
+                    _currentState = GameState.FAQ;
+                    break;
                 case Keys.D1:
                 case Keys.NumPad1:
                     _difficulty = Difficulty.Easy;
@@ -181,6 +190,17 @@ public sealed class Game : IDisposable
             if (key == Keys.R || key == Keys.Space || key == Keys.Enter)
             {
                 _currentState = GameState.Title;
+            }
+        }
+        else if (_currentState == GameState.FAQ)
+        {
+            if (key == Keys.Escape || key == Keys.Back)
+            {
+                _currentState = GameState.Title;
+            }
+            else
+            {
+                _faqManager.HandleInput(key);
             }
         }
     }
@@ -234,6 +254,12 @@ public sealed class Game : IDisposable
 
     public void Update(float dt)
     {
+        if (_currentState == GameState.FAQ)
+        {
+            _faqManager.Update(dt);
+            return;
+        }
+
         if (_currentState == GameState.PlacingBoard && _currentBoard != null)
         {
             _boardTimer -= dt;
@@ -792,6 +818,20 @@ public sealed class Game : IDisposable
 
                 startY += textSize.Height + 40;
             }
+
+            // Draw help prompt
+            using (var helpFont = new Font("Segoe UI", 12))
+            {
+                 string helpText = "Press 'H' or 'F1' for HELP / FAQ";
+                 SizeF helpSize = g.MeasureString(helpText, helpFont);
+                 g.DrawString(helpText, helpFont, Brushes.Cyan, (_width - helpSize.Width) / 2, _height - 50);
+            }
+            return;
+        }
+
+        if (_currentState == GameState.FAQ)
+        {
+            _faqManager.Render(g, _width, _height);
             return;
         }
 
@@ -919,5 +959,6 @@ public sealed class Game : IDisposable
     public void Dispose()
     {
         _debugFont.Dispose();
+        _faqManager.Dispose();
     }
 }
