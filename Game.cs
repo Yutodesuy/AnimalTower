@@ -169,8 +169,41 @@ public sealed class Game : IDisposable
         _currentState = GameState.PlacingBoard;
         _boardTimer = 10.0f;
 
-        // Create a 120x20 support board
-        _currentBoard = new SupportBoard(_mousePosition, new SizeF(120, 20));
+        // Difficulty Settings
+        float scale = 1.0f;
+        List<BoardShape> availableShapes = new List<BoardShape> { BoardShape.Rectangle };
+
+        if (_difficulty == Difficulty.Normal)
+        {
+            scale = 0.5f;
+            availableShapes.Add(BoardShape.Triangle);
+            availableShapes.Add(BoardShape.Star);
+        }
+        else if (_difficulty == Difficulty.Hard)
+        {
+            scale = 0.25f; // 0.5 * 0.5
+            availableShapes.Add(BoardShape.Triangle);
+            availableShapes.Add(BoardShape.Star);
+        }
+
+        // Pick Shape
+        BoardShape shape = availableShapes[_random.Next(availableShapes.Count)];
+
+        // Determine Size
+        SizeF size;
+        if (shape == BoardShape.Rectangle)
+        {
+            size = new SizeF(120 * scale, 20 * scale);
+        }
+        else
+        {
+            // Square aspect for non-rect shapes to avoid severe distortion
+            // Use 60 (half of 120 width) as base dimension
+            float dim = 60 * scale;
+            size = new SizeF(dim, dim);
+        }
+
+        _currentBoard = new SupportBoard(_mousePosition, size, shape);
         _currentBoard.Rotation = 0;
     }
 
