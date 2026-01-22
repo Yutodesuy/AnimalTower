@@ -7,6 +7,7 @@ public sealed class Game : IDisposable
     private int _width;
     private int _height;
     private readonly Font _debugFont;
+    private readonly Font _helpFont;
 
     public enum GameState
     {
@@ -46,6 +47,7 @@ public sealed class Game : IDisposable
         _width = Math.Max(1, width);
         _height = Math.Max(1, height);
         _debugFont = new Font("Segoe UI", 14, FontStyle.Bold);
+        _helpFont = new Font("Segoe UI", 10, FontStyle.Italic);
 
         _floor = new Floor(_height - 50, _width);
         _currentState = GameState.Title;
@@ -156,6 +158,12 @@ public sealed class Game : IDisposable
                 case Keys.D3:
                 case Keys.NumPad3:
                     _difficulty = Difficulty.Hard;
+                    break;
+                case Keys.C:
+                    using (var contactForm = new ContactForm())
+                    {
+                        contactForm.ShowDialog();
+                    }
                     break;
             }
         }
@@ -792,6 +800,10 @@ public sealed class Game : IDisposable
 
                 startY += textSize.Height + 40;
             }
+
+            string helpText = "C: お問い合わせ (Contact)";
+            SizeF helpSize = g.MeasureString(helpText, _helpFont);
+            g.DrawString(helpText, _helpFont, Brushes.LightBlue, _width - helpSize.Width - 10, _height - helpSize.Height - 10);
             return;
         }
 
@@ -919,5 +931,6 @@ public sealed class Game : IDisposable
     public void Dispose()
     {
         _debugFont.Dispose();
+        _helpFont.Dispose();
     }
 }
