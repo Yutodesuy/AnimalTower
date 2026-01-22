@@ -354,7 +354,8 @@ public sealed class Game : IDisposable
 
         PointF bestNormal = PointF.Empty;
         float bestDepth = 0.0f;
-        PointF bestContactPoint = PointF.Empty; // Not fully utilized for multi-shape impulse yet, using center-based
+        PointF[]? bestShapeA = null;
+        PointF[]? bestShapeB = null;
         bool collisionFound = false;
 
         // Iterate through ALL shape pairs to find the deepest penetration
@@ -370,13 +371,42 @@ public sealed class Game : IDisposable
                     {
                         bestDepth = depth;
                         bestNormal = normal;
+                        bestShapeA = shapeA;
+                        bestShapeB = shapeB;
                         collisionFound = true;
                     }
                 }
             }
         }
 
-        if (!collisionFound) return false;
+        if (!collisionFound || bestShapeA == null || bestShapeB == null) return false;
+
+        // Determine Contact Point (Approximate)
+        PointF contactPoint;
+        PointF vA = GetSupport(bestShapeA, new PointF(-bestNormal.X, -bestNormal.Y));
+        PointF vB = GetSupport(bestShapeB, bestNormal);
+
+        // Simple heuristic for contact point
+        bool aInB = IsPointInPolygon(vA, bestShapeB);
+        bool bInA = IsPointInPolygon(vB, bestShapeA);
+
+        if (aInB && bInA)
+        {
+             contactPoint = new PointF((vA.X + vB.X) / 2, (vA.Y + vB.Y) / 2);
+        }
+        else if (aInB)
+        {
+             contactPoint = vA;
+        }
+        else if (bInA)
+        {
+             contactPoint = vB;
+        }
+        else
+        {
+             // Edge-Edge or just touching
+             contactPoint = new PointF((vA.X + vB.X) / 2, (vA.Y + vB.Y) / 2);
+        }
 
         // Slop (Tolerance)
         float slop = 0.2f;
@@ -412,7 +442,7 @@ public sealed class Game : IDisposable
         }
 
         // Compute Impulse
-        ApplyImpulse(a, b, bestNormal, dt);
+        ApplyImpulse(a, b, bestNormal, contactPoint, dt);
 
         return true;
     }
@@ -505,52 +535,74 @@ public sealed class Game : IDisposable
         return false;
     }
 
-    private void ApplyImpulse(PhysicsBody a, PhysicsBody b, PointF normal, float dt)
+    private void ApplyImpulse(PhysicsBody a, PhysicsBody b, PointF normal, PointF contactPoint, float dt)
     {
-        // Velocity Relative
-        PointF rv = new PointF(a.Velocity.X - b.Velocity.X, a.Velocity.Y - b.Velocity.Y);
+        PointF rA = new PointF(contactPoint.X - a.Position.X, contactPoint.Y - a.Position.Y);
+        PointF rB = new PointF(contactPoint.X - b.Position.X, contactPoint.Y - b.Position.Y);
+
+        PointF rv = new PointF(
+            (a.Velocity.X - a.AngularVelocity * 0.01745f * rA.Y) - (b.Velocity.X - b.AngularVelocity * 0.01745f * rB.Y),
+            (a.Velocity.Y + a.AngularVelocity * 0.01745f * rA.X) - (b.Velocity.Y + b.AngularVelocity * 0.01745f * rB.X)
+        );
 
         float velAlongNormal = Dot(rv, normal);
 
-        if (velAlongNormal > 0) return; // Moving away
+        if (velAlongNormal > 0) return;
+
+        float raCrossN = rA.X * normal.Y - rA.Y * normal.X;
+        float rbCrossN = rB.X * normal.Y - rB.Y * normal.X;
+
+        float invMassA = a.IsStatic ? 0 : 1.0f / a.Mass;
+        float invMassB = b.IsStatic ? 0 : 1.0f / b.Mass;
+        float invIA = a.IsStatic ? 0 : 1.0f / a.MomentOfInertia;
+        float invIB = b.IsStatic ? 0 : 1.0f / b.MomentOfInertia;
+
+        float effectiveMass = invMassA + invMassB +
+                              (raCrossN * raCrossN) * invIA +
+                              (rbCrossN * rbCrossN) * invIB;
 
         float e = Math.Min(a.Restitution, b.Restitution);
+        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f) e = 0.0f;
 
-        if (Math.Abs(velAlongNormal) < 500f * dt * 2.0f)
-        {
-            e = 0.0f;
-        }
-
-        float j = -(1 + e) * velAlongNormal;
-        j /= (1 / a.Mass + 1 / b.Mass);
+        float j = -(1 + e) * velAlongNormal / effectiveMass;
 
         PointF impulse = new PointF(normal.X * j, normal.Y * j);
 
-        // Apply Linear
-        a.Velocity = new PointF(a.Velocity.X + impulse.X / a.Mass, a.Velocity.Y + impulse.Y / a.Mass);
-        b.Velocity = new PointF(b.Velocity.X - impulse.X / b.Mass, b.Velocity.Y - impulse.Y / b.Mass);
+        if (!a.IsStatic)
+        {
+             a.Velocity = new PointF(a.Velocity.X + impulse.X * invMassA, a.Velocity.Y + impulse.Y * invMassA);
+             a.AngularVelocity += (rA.X * impulse.Y - rA.Y * impulse.X) * invIA * 57.29f;
+        }
+        if (!b.IsStatic)
+        {
+             b.Velocity = new PointF(b.Velocity.X - impulse.X * invMassB, b.Velocity.Y - impulse.Y * invMassB);
+             b.AngularVelocity -= (rB.X * impulse.Y - rB.Y * impulse.X) * invIB * 57.29f;
+        }
 
         // Friction
-        PointF tangent = new PointF(-normal.Y, normal.X); // Perpendicular
-        float jt = -Dot(rv, tangent);
-        jt /= (1 / a.Mass + 1 / b.Mass);
+        PointF tangent = new PointF(-normal.Y, normal.X);
+        float rtA = rA.X * tangent.Y - rA.Y * tangent.X;
+        float rtB = rB.X * tangent.Y - rB.Y * tangent.X;
+
+        float effMassT = invMassA + invMassB + (rtA * rtA) * invIA + (rtB * rtB) * invIB;
+
+        float jt = -Dot(rv, tangent) / effMassT;
 
         float mu = (a.Friction + b.Friction) * 0.5f;
         float maxJt = j * mu;
         if (Math.Abs(jt) > maxJt) jt = Math.Sign(jt) * maxJt;
 
         PointF frictionImpulse = new PointF(tangent.X * jt, tangent.Y * jt);
-        a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X / a.Mass, a.Velocity.Y + frictionImpulse.Y / a.Mass);
-        b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X / b.Mass, b.Velocity.Y - frictionImpulse.Y / b.Mass);
 
-        // Induce rotation
-        float dist = (float)Math.Sqrt(Math.Pow(a.Position.X - b.Position.X, 2) + Math.Pow(a.Position.Y - b.Position.Y, 2));
-        if (dist > 1.0f)
+        if (!a.IsStatic)
         {
-            PointF ba = new PointF(a.Position.X - b.Position.X, a.Position.Y - b.Position.Y);
-            float torqueVal = ba.X * impulse.Y - ba.Y * impulse.X;
-            a.AngularVelocity += (torqueVal * 0.1f) / a.MomentOfInertia;
-            b.AngularVelocity -= (torqueVal * 0.1f) / b.MomentOfInertia;
+             a.Velocity = new PointF(a.Velocity.X + frictionImpulse.X * invMassA, a.Velocity.Y + frictionImpulse.Y * invMassA);
+             a.AngularVelocity += (rA.X * frictionImpulse.Y - rA.Y * frictionImpulse.X) * invIA * 57.29f;
+        }
+        if (!b.IsStatic)
+        {
+             b.Velocity = new PointF(b.Velocity.X - frictionImpulse.X * invMassB, b.Velocity.Y - frictionImpulse.Y * invMassB);
+             b.AngularVelocity -= (rB.X * frictionImpulse.Y - rB.Y * frictionImpulse.X) * invIB * 57.29f;
         }
     }
 
@@ -649,6 +701,38 @@ public sealed class Game : IDisposable
         float len = (float)Math.Sqrt(p.X * p.X + p.Y * p.Y);
         if (len == 0) return new PointF(0, 0);
         return new PointF(p.X / len, p.Y / len);
+    }
+
+    private PointF GetSupport(PointF[] vertices, PointF dir)
+    {
+        float maxDot = float.MinValue;
+        PointF bestV = PointF.Empty;
+        foreach (var v in vertices)
+        {
+            float dot = v.X * dir.X + v.Y * dir.Y;
+            if (dot > maxDot)
+            {
+                maxDot = dot;
+                bestV = v;
+            }
+        }
+        return bestV;
+    }
+
+    private bool IsPointInPolygon(PointF p, PointF[] poly)
+    {
+        int crossings = 0;
+        for (int i = 0; i < poly.Length; i++)
+        {
+             PointF a = poly[i];
+             PointF b = poly[(i + 1) % poly.Length];
+             if ((a.Y > p.Y) != (b.Y > p.Y))
+             {
+                 float intersectX = (b.X - a.X) * (p.Y - a.Y) / (b.Y - a.Y) + a.X;
+                 if (p.X < intersectX) crossings++;
+             }
+        }
+        return (crossings % 2) != 0;
     }
 
     public void Render(Graphics g)
