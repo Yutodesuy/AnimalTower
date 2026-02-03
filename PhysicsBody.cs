@@ -2,21 +2,29 @@ using System.Drawing;
 
 namespace AnimalTower;
 
+/// <summary>
+/// 物理演算の対象となる物体の基底クラスです。
+/// 位置、速度、回転、形状データなどを管理します。
+/// </summary>
 public class PhysicsBody
 {
     public PointF Position { get; set; }
     public PointF Velocity { get; set; }
     public PointF Acceleration { get; set; }
 
+    // 物体の形状データ（ローカル座標系）
     protected List<PointF[]> LocalShapes { get; set; }
 
-    public float Rotation { get; set; }
+    public float Rotation { get; set; } // 度数法
     public float AngularVelocity { get; set; }
-    public bool IsStatic { get; set; }
+    public bool IsStatic { get; set; } // 静的物体かどうか
     public float Mass { get; set; } = 1.0f;
-    public float Restitution { get; set; } = 0.2f;
-    public float Friction { get; set; } = 0.5f;
+    public float Restitution { get; set; } = 0.2f; // 反発係数
+    public float Friction { get; set; } = 0.5f;    // 摩擦係数
 
+    /// <summary>
+    /// 慣性モーメントを計算して返します（簡易計算）。
+    /// </summary>
     public float MomentOfInertia
     {
         get
@@ -26,6 +34,9 @@ public class PhysicsBody
         }
     }
 
+    /// <summary>
+    /// 物体の境界ボックス（AABB）を返します。
+    /// </summary>
     public RectangleF Bounds
     {
         get
@@ -98,6 +109,9 @@ public class PhysicsBody
         return new SizeF(maxX - minX, maxY - minY);
     }
 
+    /// <summary>
+    /// 現在の位置と回転を適用したワールド座標系の頂点リストを取得します。
+    /// </summary>
     public List<PointF[]> GetTransformedVertices()
     {
         if (LocalShapes == null) return new List<PointF[]>();

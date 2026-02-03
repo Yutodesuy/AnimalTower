@@ -2,6 +2,9 @@ using System.Drawing;
 
 namespace AnimalTower;
 
+/// <summary>
+/// 動物オブジェクトを表すクラスです。PhysicsBodyを継承し、色や接触状態を管理します。
+/// </summary>
 public sealed class Animal : PhysicsBody
 {
     public Color Color { get; set; } = Color.FromArgb(200, 100, 100);
@@ -22,11 +25,19 @@ public sealed class Animal : PhysicsBody
         Color = color;
     }
 
+    // --- 基本形状生成メソッド ---
+
+    /// <summary>
+    /// 正方形の動物を生成します。
+    /// </summary>
     public static Animal CreateBox(PointF position, float size)
     {
         return new Animal(position, new SizeF(size, size));
     }
 
+    /// <summary>
+    /// 正三角形の動物を生成します。
+    /// </summary>
     public static Animal CreateTriangle(PointF position, float size)
     {
         float h = size * (float)Math.Sqrt(3) / 2;
@@ -39,6 +50,9 @@ public sealed class Animal : PhysicsBody
         return new Animal(position, vertices, Color.FromArgb(100, 200, 200));
     }
 
+    /// <summary>
+    /// 正五角形の動物を生成します。
+    /// </summary>
     public static Animal CreatePentagon(PointF position, float size)
     {
         PointF[] vertices = new PointF[5];
@@ -50,6 +64,9 @@ public sealed class Animal : PhysicsBody
         return new Animal(position, vertices, Color.FromArgb(200, 200, 100));
     }
 
+    /// <summary>
+    /// 台形の動物を生成します。
+    /// </summary>
     public static Animal CreateTrapezoid(PointF position, float size)
     {
         float topWidth = size * 0.6f;
@@ -66,6 +83,10 @@ public sealed class Animal : PhysicsBody
         return new Animal(position, vertices, Color.FromArgb(200, 100, 200));
     }
 
+    /// <summary>
+    /// 複合形状を持つ具体的な動物（ゾウ、キリンなど）を生成するファクトリクラスです。
+    /// 複数の凸多角形を組み合わせて動物の形状を構成します。
+    /// </summary>
     public static class Factory
     {
         private const float Scale = 1.5f;

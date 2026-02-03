@@ -1,5 +1,9 @@
 namespace AnimalTower;
 
+/// <summary>
+/// ゲームの床（地面）を表すクラスです。
+/// 位置、幅、摩擦係数を保持します。
+/// </summary>
 public sealed class Floor
 {
     public float Y { get; set; }
