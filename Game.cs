@@ -2,28 +2,38 @@ using System.Drawing.Drawing2D;
 
 namespace AnimalTower;
 
+/// <summary>
+/// ゲームのコアロジックを管理するクラスです。
+/// 状態管理、物理演算、入力処理、描画処理を担当します。
+/// </summary>
 public sealed class Game : IDisposable
 {
     private int _width;
     private int _height;
     private readonly Font _debugFont;
 
+    /// <summary>
+    /// ゲームの状態を表す列挙型です。
+    /// </summary>
     public enum GameState
     {
-        Title,
-        Aiming,
-        Falling,
-        Landed, // Transitional state
-        PlacingBoard,
-        GameOver,
-        FAQ
+        Title,          // タイトル画面
+        Aiming,         // 動物の落下位置を調整中
+        Falling,        // 動物が落下中
+        Landed,         // 着地処理（待機状態）
+        PlacingBoard,   // サポート板の設置モード
+        GameOver,       // ゲームオーバー画面
+        FAQ             // ヘルプ/FAQ画面
     }
 
+    /// <summary>
+    /// 難易度を表す列挙型です。
+    /// </summary>
     public enum Difficulty
     {
-        Easy,
-        Normal,
-        Hard
+        Easy,   // 簡単：床が広い、摩擦が大きい
+        Normal, // 普通
+        Hard    // 難しい：床が狭い、滑りやすい
     }
 
     private GameState _currentState;
@@ -45,7 +55,7 @@ public sealed class Game : IDisposable
     // 1: How to Play (About)
     // 2: Difficulty Select
 
-    // New fields for stability timeout
+    // 安定判定用のタイムアウト関連フィールド
     private float _contactTimer;
     private bool _hasContacted;
 
@@ -64,6 +74,9 @@ public sealed class Game : IDisposable
         _titleSlideIndex = 0;
     }
 
+    /// <summary>
+    /// 新しいゲームを開始するための初期化を行います。
+    /// </summary>
     private void StartNewGame()
     {
         _landedAnimals.Clear();
@@ -71,6 +84,7 @@ public sealed class Game : IDisposable
         _currentState = GameState.Aiming;
         UpdateFloorDimensions();
 
+        // Hardモードの場合は最初に板設置から開始
         if (_difficulty == Difficulty.Hard)
         {
             StartBoardPlacement();
@@ -81,6 +95,9 @@ public sealed class Game : IDisposable
         }
     }
 
+    /// <summary>
+    /// 難易度に応じて床のサイズや摩擦を更新します。
+    /// </summary>
     private void UpdateFloorDimensions()
     {
         float floorWidth = _width;
@@ -102,6 +119,9 @@ public sealed class Game : IDisposable
         _floor.Width = floorWidth;
     }
 
+    /// <summary>
+    /// 新しい動物を生成し、操作可能状態にします。
+    /// </summary>
     private void SpawnAnimal()
     {
         float startX = _width / 2f;
@@ -110,6 +130,7 @@ public sealed class Game : IDisposable
         int animalType = _random.Next(10);
         PointF pos = new PointF(startX, startY);
 
+        // ランダムに動物を生成
         switch (animalType)
         {
             case 0: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
@@ -121,10 +142,11 @@ public sealed class Game : IDisposable
             case 6: _currentAnimal = Animal.Factory.CreateRabbit(pos); break;
             case 7: _currentAnimal = Animal.Factory.CreateCat(pos); break;
             case 8: _currentAnimal = Animal.Factory.CreateChick(pos); break;
-            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break; // Note: Turtle logic exists in factory but was mentioned removed. Keeping factory call if valid.
+            case 9: _currentAnimal = Animal.Factory.CreateTurtle(pos); break; // Turtleは削除対象だがFactoryには残っているため維持
             default: _currentAnimal = Animal.Factory.CreateElephant(pos); break;
         }
 
+        // 難易度による反発係数の調整
         if (_difficulty == Difficulty.Normal)
         {
             _currentAnimal.Restitution *= 0.7f;
@@ -135,13 +157,16 @@ public sealed class Game : IDisposable
         }
 
         _currentState = GameState.Aiming;
-        _aimTimer = 5.0f;
+        _aimTimer = 5.0f; // 強制落下までの制限時間
 
-        // Reset contact tracking
+        // 接触状態のリセット
         _contactTimer = 0f;
         _hasContacted = false;
     }
 
+    /// <summary>
+    /// キーボード入力を処理します。
+    /// </summary>
     public void HandleInput(Keys key)
     {
         if (_currentState == GameState.Title)
@@ -163,6 +188,7 @@ public sealed class Game : IDisposable
                 case Keys.D1:
                 case Keys.NumPad1:
                     _difficulty = Difficulty.Easy;
+                    break; // Added missing break
                 case Keys.Escape:
                 case Keys.Back:
                     if (_titleSlideIndex > 0) _titleSlideIndex--;
@@ -197,7 +223,7 @@ public sealed class Game : IDisposable
             if (key == Keys.R || key == Keys.Space || key == Keys.Enter)
             {
                 _currentState = GameState.Title;
-                _titleSlideIndex = 0; // Reset to start of title sequence
+                _titleSlideIndex = 0; // タイトル画面の最初に戻る
             }
         }
         else if (_currentState == GameState.FAQ)
@@ -223,11 +249,14 @@ public sealed class Game : IDisposable
         _difficulty = (Difficulty)current;
     }
 
+    /// <summary>
+    /// サポート板の設置モードを開始します。
+    /// </summary>
     private void StartBoardPlacement()
     {
         _currentState = GameState.PlacingBoard;
         _boardTimer = 10.0f;
-        // Difficulty Settings
+        // 難易度設定
         float scale = 1.0f;
         List<BoardShape> availableShapes = new List<BoardShape> { BoardShape.Rectangle };
 
@@ -270,6 +299,9 @@ public sealed class Game : IDisposable
         }
     }
 
+    /// <summary>
+    /// ゲームの更新ループです。物理演算のステップ実行、状態遷移の管理を行います。
+    /// </summary>
     public void Update(float dt)
     {
         if (_currentState == GameState.FAQ)
@@ -278,6 +310,7 @@ public sealed class Game : IDisposable
             return;
         }
 
+        // 板の設置モード中の更新
         if (_currentState == GameState.PlacingBoard && _currentBoard != null)
         {
             _boardTimer -= dt;
@@ -291,6 +324,7 @@ public sealed class Game : IDisposable
             }
         }
 
+        // 狙い定め中の時間制限処理
         if (_currentState == GameState.Aiming && _currentAnimal != null)
         {
             _aimTimer -= dt;
@@ -305,6 +339,7 @@ public sealed class Game : IDisposable
             || _currentState == GameState.Landed
             || _currentState == GameState.Aiming;
 
+        // 物理演算の実行
         if (physicsActive)
         {
             var activeBodies = new List<Animal>();
@@ -322,6 +357,7 @@ public sealed class Game : IDisposable
 
             float gravity = 500f;
 
+            // 重力の適用と位置の更新
             foreach (var body in activeBodies)
             {
                 if (body.IsStatic) continue;
@@ -334,6 +370,7 @@ public sealed class Game : IDisposable
                 body.Rotation += body.AngularVelocity * dt;
             }
 
+            // 衝突判定と解決（反復法により安定性を向上）
             int iterations = 4;
             bool currentHitSomething = false;
 
@@ -343,6 +380,7 @@ public sealed class Game : IDisposable
 
             for (int k = 0; k < iterations; k++)
             {
+                // 床との衝突判定
                 foreach (var body in activeBodies)
                 {
                     if (CheckAndResolveFloorCollision(body, dt))
@@ -351,6 +389,7 @@ public sealed class Game : IDisposable
                     }
                 }
 
+                // 物体同士の衝突判定
                 for (int i = 0; i < allBodies.Count; i++)
                 {
                     for (int j = i + 1; j < allBodies.Count; j++)
@@ -368,6 +407,7 @@ public sealed class Game : IDisposable
                 }
             }
 
+            // 落下一の動物の安定判定と状態遷移
             if (_currentState == GameState.Falling && _currentAnimal != null)
             {
                 if (currentHitSomething) _hasContacted = true;
@@ -376,6 +416,7 @@ public sealed class Game : IDisposable
                 float vSq = _currentAnimal.Velocity.X * _currentAnimal.Velocity.X + _currentAnimal.Velocity.Y * _currentAnimal.Velocity.Y;
                 float angSq = _currentAnimal.AngularVelocity * _currentAnimal.AngularVelocity;
 
+                // 速度が十分小さいか、一定時間経過したら着地とみなす
                 bool isStable = currentHitSomething && vSq < 150 && angSq < 50;
                 bool isTimeout = _hasContacted && _contactTimer > 3.0f;
 
@@ -389,6 +430,7 @@ public sealed class Game : IDisposable
                     if (_difficulty == Difficulty.Normal) threshold = 6;
                     if (_difficulty == Difficulty.Hard) threshold = 7;
 
+                    // 一定数積んだら板設置モードへ
                     if (_landedAnimals.Count > 0 && _landedAnimals.Count % threshold == 0)
                     {
                         StartBoardPlacement();
@@ -400,6 +442,7 @@ public sealed class Game : IDisposable
                 }
             }
 
+            // ゲームオーバー判定（画面外への落下）
             for (int i = activeBodies.Count - 1; i >= 0; i--)
             {
                 var body = activeBodies[i];
@@ -409,6 +452,7 @@ public sealed class Game : IDisposable
                 }
             }
 
+            // 床に長時間接している物体の反発係数を0にする（安定化）
             foreach (var body in activeBodies)
             {
                 if (body.IsTouchingFloor)
@@ -427,6 +471,9 @@ public sealed class Game : IDisposable
         }
     }
 
+    /// <summary>
+    /// 2つの物理ボディ間の衝突を解決します（衝撃力の適用と位置補正）。
+    /// </summary>
     private bool ResolveCollision(PhysicsBody a, PhysicsBody b, float dt)
     {
         var shapesA = a.GetTransformedVertices();
@@ -438,6 +485,7 @@ public sealed class Game : IDisposable
         PointF[]? bestShapeB = null;
         bool collisionFound = false;
 
+        // 全ての形状の組み合わせについてSATで衝突判定
         foreach (var shapeA in shapesA)
         {
             foreach (var shapeB in shapesB)
@@ -460,12 +508,11 @@ public sealed class Game : IDisposable
 
         if (!collisionFound || bestShapeA == null || bestShapeB == null) return false;
 
-        // Determine Contact Point (Approximate)
+        // 接触点の推定
         PointF contactPoint;
         PointF vA = GetSupport(bestShapeA, new PointF(-bestNormal.X, -bestNormal.Y));
         PointF vB = GetSupport(bestShapeB, bestNormal);
 
-        // Simple heuristic for contact point
         bool aInB = IsPointInPolygon(vA, bestShapeB);
         bool bInA = IsPointInPolygon(vB, bestShapeA);
 
@@ -483,10 +530,10 @@ public sealed class Game : IDisposable
         }
         else
         {
-             // Edge-Edge or just touching
              contactPoint = new PointF((vA.X + vB.X) / 2, (vA.Y + vB.Y) / 2);
         }
 
+        // 位置補正（めり込み解消）
         float slop = 0.2f;
         float correctionDepth = Math.Max(0, bestDepth - slop);
 
@@ -518,11 +565,14 @@ public sealed class Game : IDisposable
             }
         }
 
-        // Compute Impulse
+        // 衝撃力の計算と適用
         ApplyImpulse(a, b, bestNormal, contactPoint, dt);
         return true;
     }
 
+    /// <summary>
+    /// 分離軸定理（SAT）を用いて衝突判定を行います。
+    /// </summary>
     private bool CheckCollisionSAT(PointF[] shapeA, PointF[] shapeB, PointF centerA, PointF centerB, out PointF normal, out float depth)
     {
         normal = PointF.Empty;
@@ -556,6 +606,9 @@ public sealed class Game : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// 床との衝突判定と解決を行います。
+    /// </summary>
     private bool CheckAndResolveFloorCollision(Animal a, float dt)
     {
         var shapes = a.GetTransformedVertices();
@@ -797,6 +850,9 @@ public sealed class Game : IDisposable
         return (crossings % 2) != 0;
     }
 
+    /// <summary>
+    /// ゲームの描画処理を行います。
+    /// </summary>
     public void Render(Graphics g)
     {
         g.SmoothingMode = SmoothingMode.AntiAlias;

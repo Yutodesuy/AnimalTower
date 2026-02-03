@@ -10,6 +10,10 @@ public enum BoardShape
     Star
 }
 
+/// <summary>
+/// タワーを支えるための板（ボード）クラスです。
+/// 静的オブジェクトとして扱われ、長方形、三角形、星形などの形状を持ちます。
+/// </summary>
 public sealed class SupportBoard : PhysicsBody
 {
     public SupportBoard(PointF center, SizeF size, BoardShape shape = BoardShape.Rectangle) : base(center, size)
@@ -25,6 +29,9 @@ public sealed class SupportBoard : PhysicsBody
         }
     }
 
+    /// <summary>
+    /// 指定された形状とサイズに基づいて頂点データを生成します。
+    /// </summary>
     private List<PointF[]> GenerateShape(BoardShape shape, SizeF size)
     {
         var shapes = new List<PointF[]>();
@@ -33,7 +40,7 @@ public sealed class SupportBoard : PhysicsBody
 
         if (shape == BoardShape.Triangle)
         {
-            // Point-up Triangle
+            // 上向きの三角形
             shapes.Add(new PointF[]
             {
                 new PointF(0, -h/2),       // Top
@@ -43,7 +50,7 @@ public sealed class SupportBoard : PhysicsBody
         }
         else if (shape == BoardShape.Star)
         {
-            // 5-pointed star fitting in size
+            // 星形（凸多角形の組み合わせで表現）
             float R = Math.Min(w, h) / 2f;
             float r = R * 0.4f;
 
@@ -51,7 +58,7 @@ public sealed class SupportBoard : PhysicsBody
             PointF[] outerPoints = new PointF[5];
 
             double angleStep = Math.PI * 2 / 5;
-            double offset = -Math.PI / 2; // Start at top
+            double offset = -Math.PI / 2; // 上から開始
 
             for (int i = 0; i < 5; i++)
             {
@@ -62,10 +69,10 @@ public sealed class SupportBoard : PhysicsBody
                 innerPoints[i] = new PointF((float)(r * Math.Cos(angleI)), (float)(r * Math.Sin(angleI)));
             }
 
-            // Central Pentagon (Convex)
+            // 中央の五角形
             shapes.Add(innerPoints);
 
-            // 5 Point Triangles
+            // 5つの頂点（三角形）
             for (int i = 0; i < 5; i++)
             {
                 // Triangle: Inner[i-1], Outer[i], Inner[i]

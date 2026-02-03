@@ -4,6 +4,10 @@ using System.Windows.Forms;
 
 namespace AnimalTower;
 
+/// <summary>
+/// FAQ（ヘルプ）画面を管理するクラスです。
+/// 質問と回答のリスト表示、展開アニメーション、スクロール処理を担当します。
+/// </summary>
 public class FAQManager
 {
     private class FAQItem
@@ -24,6 +28,9 @@ public class FAQManager
     private readonly Font _answerFont = new Font("Segoe UI", 11);
     private readonly Font _hintFont = new Font("Segoe UI", 10, FontStyle.Italic);
 
+    /// <summary>
+    /// FAQ項目を初期化します。
+    /// </summary>
     public void Initialize()
     {
         _items.Clear();
@@ -50,9 +57,12 @@ public class FAQManager
         _items.Add(new FAQItem { Category = category, Question = q, Answer = a });
     }
 
+    /// <summary>
+    /// アニメーションの更新を行います。
+    /// </summary>
     public void Update(float dt)
     {
-        // Simple animation logic for expansion
+        // 展開アニメーションの更新
         foreach (var item in _items)
         {
             float target = item.IsExpanded ? 1f : 0f;
@@ -60,6 +70,9 @@ public class FAQManager
         }
     }
 
+    /// <summary>
+    /// FAQ画面でのキー入力を処理します（選択、展開、スクロール）。
+    /// </summary>
     public void HandleInput(Keys key)
     {
         switch (key)
@@ -88,22 +101,24 @@ public class FAQManager
 
     private void AdjustScroll()
     {
-        // Basic keep-in-view logic would go here if list is long
-        // For now, simple centering or fixed offset
+        // 単純なスクロール制御
         if (_selectedIndex < _scrollOffset) _scrollOffset = _selectedIndex;
         if (_selectedIndex > _scrollOffset + 5) _scrollOffset = _selectedIndex - 5;
     }
 
+    /// <summary>
+    /// FAQ画面を描画します。
+    /// </summary>
     public void Render(Graphics g, int width, int height)
     {
-        // Background
+        // 背景の描画
         using (var bgBrush = new LinearGradientBrush(new Point(0,0), new Point(0, height),
             Color.FromArgb(40, 44, 55), Color.FromArgb(20, 24, 30)))
         {
             g.FillRectangle(bgBrush, 0, 0, width, height);
         }
 
-        // Title
+        // タイトルの描画
         g.DrawString("HELP / FAQ", _titleFont, Brushes.White, 40, 30);
         g.DrawString("Esc / Backspace: 戻る", _hintFont, Brushes.LightGray, width - 200, 45);
 
@@ -112,30 +127,7 @@ public class FAQManager
         float contentWidth = width - 100;
         float itemHeightBase = 40;
 
-        // Draw List
-        for (int i = 0; i < _items.Count; i++)
-        {
-            // Simple scrolling: Skip items outside view?
-            // For this implementation, we just draw everything with offset
-            // But to keep it simple and robust, let's just draw list.
-
-            float y = startY + (i - _scrollOffset) * (itemHeightBase + 5);
-            // Note: This simple formula doesn't account for expanded height shifting subsequent items.
-            // We need a proper layout pass.
-        }
-
-        // Correct Layout Pass
-        float currentY = startY;
-        // Only draw a subset or clamp? Let's implement scrolling by shifting Y.
-        // Better: calculate total height and shift `currentY` by `-_scrollOffset * itemHeight`.
-        // Actually, let's just iterate and draw, shifting Y as we go.
-
-        // To handle scrolling with variable heights (expanded items), we need to track visual position.
-        // Let's force focus to center the selected item if possible, or just standard scroll.
-        // Simplest: Always draw from top, but shift up based on _scrollOffset (pixels).
-        // But _scrollOffset was index-based. Let's make it index-based "top item".
-
-        int itemsToShow = _items.Count; // Draw all, clip by screen
+        int itemsToShow = _items.Count;
         int startIndex = _scrollOffset;
 
         float drawY = 100;
@@ -148,21 +140,20 @@ public class FAQManager
 
             if (item.ExpandAnimation > 0.01f)
             {
-                // Measure answer height
+                // 回答部分の高さを計算
                 SizeF size = g.MeasureString(item.Answer, _answerFont, (int)contentWidth - 20);
                 expandedH = (size.Height + 20) * item.ExpandAnimation;
             }
 
-            // Check if off screen
+            // 画面外なら描画終了
             if (drawY > height) break;
 
-            // Draw Item Background
+            // 項目の背景描画
             RectangleF rect = new RectangleF(x, drawY, contentWidth, itemH + expandedH);
             bool isSelected = (i == _selectedIndex);
 
             using (var brush = new SolidBrush(isSelected ? Color.FromArgb(80, 100, 140) : Color.FromArgb(50, 55, 65)))
             {
-                // Rounded rect manual
                 g.FillRectangle(brush, rect);
                 g.DrawRectangle(Pens.Gray, rect.X, rect.Y, rect.Width, rect.Height);
             }
@@ -170,18 +161,18 @@ public class FAQManager
             if (isSelected)
             {
                  g.DrawRectangle(Pens.Cyan, rect.X, rect.Y, rect.Width, rect.Height);
-                 // Highlight marker
+                 // 選択中のマーカー
                  g.FillRectangle(Brushes.Cyan, x, drawY, 5, itemH + expandedH);
             }
 
-            // Draw Category (Small tag)
+            // カテゴリの描画
             SizeF catSize = g.MeasureString(item.Category, _hintFont);
             g.DrawString(item.Category, _hintFont, Brushes.LightSkyBlue, x + 15, drawY + 5);
 
-            // Draw Question
+            // 質問の描画
             g.DrawString(item.Question, _questionFont, Brushes.White, x + 15 + catSize.Width + 10, drawY + 8);
 
-            // Draw Answer (Clipped/Masked by height)
+            // 回答の描画（クリッピング使用）
             if (expandedH > 0)
             {
                 RectangleF textRect = new RectangleF(x + 20, drawY + itemH, contentWidth - 40, expandedH - 10);
@@ -191,10 +182,8 @@ public class FAQManager
                 g.Clip = r;
             }
 
-            drawY += itemH + expandedH + 10; // Spacing
+            drawY += itemH + expandedH + 10; // スペースを空ける
         }
-
-        // Scrollbar indicator (optional)
     }
 
     public void Dispose()
